@@ -1,0 +1,132 @@
+---
+title: "Exploratory Script"
+author: "Adam Kiehl"
+date: "2/11/2022"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(acp) # INAR model
+library(tscount) # GLAR and INGARCH models
+library(glarma) # GLARMA model
+# install.packages("INLA",repos=c(getOption("repos"),INLA="https://inla.r-inla-download.org/R/stable"), dep=TRUE) # Bayesian model
+# library(INLA) # Bayesian model
+
+set.seed(499)
+```
+
+Read in raw spike train data:
+```{r}
+raw_data <- read.csv('./Data/trialspikedata.csv')
+```
+
+Exploratory view of data:
+```{r}
+summary(raw_data)
+```
+
+Generate data frame of binned count data:
+```{r}
+BINWIDTH <- 0.05
+
+# function for binning spike train counts
+make_counts <- function(times, start, end, width){
+  cuts <- seq(start, end, width)
+  if(cuts[length(cuts)] < end){
+    cuts <- c(cuts, cuts[length(cuts)] + width)
+  }  
+  counts <- rep(0, length(cuts) - 1)
+  b <- .bincode(times, cuts, right=FALSE)
+  ub <- unique(b)
+  counts[ub] <- tabulate(b)[ub]
+  return(counts)
+}
+
+# filter out non-experimental recordings
+testing_df <- raw_data %>% 
+  filter(trial > 0, spiketime <= completiontime, spiketime >= trialstart)
+# get unique trial, neuron pairs in data
+trial_data <- testing_df %>%
+  select(-spiketime) %>% 
+  distinct()
+# binned count data frame
+binned_data <- testing_df %>% 
+  group_by(region, neuron_number, trial) %>% 
+  group_modify(~ { data_frame(bincount = make_counts(.x$spiketime, .x$trialstart[1], .x$completiontime[nrow(.x)], BINWIDTH),
+                              binnumb = 1:length(bincount), 
+                              binstart = (binnumb-1) * BINWIDTH + .x$trialstart[1],
+                              binend = (binnumb) * BINWIDTH + .x$trialstart[1])}) %>%
+  left_join(trial_data, by=c("region", "neuron_number", "trial"))
+# pivot wider to make neurons predictors
+binned_df  <- binned_data %>%
+  mutate(neuron = paste(region, neuron_number, sep = '.')) %>%
+  ungroup() %>%
+  select(-c(region, neuron_number, wire, cell)) %>%
+  pivot_wider(names_from = neuron, values_from = bincount)
+
+# remove unnecessary data
+remove(testing_df)
+remove(trial_data)
+```
+
+INAR model fit with acp() function:
+```{r, warning=FALSE}
+model_df <- binned_df %>%
+  filter(trial < 60) %>%
+  select(c(CA1.1, CA3.1, CA3.2, CA3.3, CA3.4, CA3.5, CA3.6, CA3.7, CA3.8, CA3.9, CA3.10, CA3.11, CA3.12, CA3.13, CA3.14, CA3.15,
+           CA3.16, CA3.17, CA3.18, CA3.19, CA3.20, CA3.21))
+pred_df <- binned_df %>%
+  filter(trial >= 60) %>%
+  select(c(CA3.1, CA3.2, CA3.3, CA3.4, CA3.5, CA3.6, CA3.7, CA3.8, CA3.9, CA3.10, CA3.11, CA3.12, CA3.13, CA3.14, CA3.15,
+           CA3.16, CA3.17, CA3.18, CA3.19, CA3.20, CA3.21))
+pred_res <- binned_df %>%
+  filter(trial >= 60) %>%
+  select(CA1.1)
+model <- acp(CA1.1 ~ ., data = model_df, p = 1, q = 2)
+summary(model)
+pred <- predict(model, newxdata = pred_df, newydata = pred_res)
+mean((pred - pred_res)^2)
+```
+
+
+```{r}
+connect <- data.frame(resp = c('CA1.1', 'CA1.2', 'CA1.3', 'CA1.4', 'CA1.5', 'CA1.6', 'CA1.7', 'CA1.8', 'CA1.9', 'CA1.10',
+                                'CA1.11', 'CA1.12', 'CA1.13', 'CA1.14', 'CA1.15'),
+                       CA3.1 = rep(NA, 15),
+                       CA3.2 = rep(NA, 15),
+                       CA3.3 = rep(NA, 15),
+                       CA3.4 = rep(NA, 15),
+                       CA3.5 = rep(NA, 15),
+                       CA3.6 = rep(NA, 15),
+                       CA3.7 = rep(NA, 15),
+                       CA3.8 = rep(NA, 15),
+                       CA3.9 = rep(NA, 15),
+                       CA3.10 = rep(NA, 15),
+                       CA3.11 = rep(NA, 15),
+                       CA3.12 = rep(NA, 15),
+                       CA3.13 = rep(NA, 15),
+                       CA3.14 = rep(NA, 15),
+                       CA3.15 = rep(NA, 15),
+                       CA3.16 = rep(NA, 15),
+                       CA3.17 = rep(NA, 15),
+                       CA3.18 = rep(NA, 15),
+                       CA3.19 = rep(NA, 15),
+                       CA3.20 = rep(NA, 15),
+                       CA3.21 = rep(NA, 15))
+
+for (region in connect$resp) {
+  model_df <- binned_df %>%
+    select(c(region, CA3.1, CA3.2, CA3.3, CA3.4, CA3.5, CA3.6, CA3.7, CA3.8, CA3.9, CA3.10, CA3.11, CA3.12, CA3.13, CA3.14, CA3.15,
+           CA3.16, CA3.17, CA3.18, CA3.19, CA3.20, CA3.21))
+  model <- acp(formula(paste0(region, ' ~ .')), data = model_df, p = 1, q = 2)
+  temp <- summary(model)
+  p_vals <- temp$coefficients[2:22, 4]
+  connect[which(connect$resp == region), ] <- c(region, p_vals)
+}
+```
+
+
+
+
