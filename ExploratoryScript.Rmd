@@ -43,7 +43,7 @@ summary(raw_data)
 `in_testing`: Whether spike occurs during a trial  
   
 Generate data frame of binned count data:
-```{r}
+```{r, warning=FALSE}
 BINWIDTH <- 0.05
 
 # function for binning spike train counts
