@@ -12,7 +12,7 @@ library(tidyverse)
 
 Read in raw spike train data:
 ```{r}
-raw_data <- read.csv('./Data/trialspikedata.csv')
+raw_data <- read.csv('../Data/trialspikedata.csv')
 ```
 
 Exploratory view of data:
@@ -83,7 +83,7 @@ remove(trial_data)
 
 # write to local .csv file
 binned_df %>%
-  write.csv('./Data/binned_df.csv')
+  write.csv('../Data/binned_df.csv')
 ```
 
 Exploratory view of data frame:
