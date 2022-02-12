@@ -8,13 +8,6 @@ output: pdf_document
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
 library(tidyverse)
-library(acp) # INAR model
-library(tscount) # GLAR and INGARCH models
-library(glarma) # GLARMA model
-# install.packages("INLA",repos=c(getOption("repos"),INLA="https://inla.r-inla-download.org/R/stable"), dep=TRUE) # Bayesian model
-# library(INLA) # Bayesian model
-
-set.seed(499)
 ```
 
 Read in raw spike train data:

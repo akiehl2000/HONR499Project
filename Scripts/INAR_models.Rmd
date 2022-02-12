@@ -7,7 +7,10 @@ output: html_document
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(acp) # INAR model
 
+set.seed(499)
 ```
 
 INAR model fit with acp() function:
