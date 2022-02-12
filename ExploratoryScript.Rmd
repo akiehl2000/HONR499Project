@@ -76,18 +76,20 @@ INAR model fit with acp() function:
 model_df <- binned_df %>%
   filter(trial < 60) %>%
   select(c(CA1.1, CA3.1, CA3.2, CA3.3, CA3.4, CA3.5, CA3.6, CA3.7, CA3.8, CA3.9, CA3.10, CA3.11, CA3.12, CA3.13, CA3.14, CA3.15,
-           CA3.16, CA3.17, CA3.18, CA3.19, CA3.20, CA3.21))
+           CA3.16, CA3.17, CA3.18, CA3.19, CA3.20, CA3.21)) %>%
+  data.frame()
 pred_df <- binned_df %>%
   filter(trial >= 60) %>%
   select(c(CA3.1, CA3.2, CA3.3, CA3.4, CA3.5, CA3.6, CA3.7, CA3.8, CA3.9, CA3.10, CA3.11, CA3.12, CA3.13, CA3.14, CA3.15,
-           CA3.16, CA3.17, CA3.18, CA3.19, CA3.20, CA3.21))
+           CA3.16, CA3.17, CA3.18, CA3.19, CA3.20, CA3.21)) %>%
+  data.frame()
 pred_res <- binned_df %>%
   filter(trial >= 60) %>%
   select(CA1.1)
 model <- acp(CA1.1 ~ ., data = model_df, p = 1, q = 2)
 summary(model)
 pred <- predict(model, newxdata = pred_df, newydata = pred_res)
-mean((pred - pred_res)^2)
+mean((pred - pred_res$CA1.1)^2, na.rm = TRUE)
 ```
 
 
