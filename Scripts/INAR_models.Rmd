@@ -1,0 +1,72 @@
+---
+title: "INAR Modeling"
+author: "Adam Kiehl"
+date: "2/12/2022"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+```
+
+INAR model fit with acp() function:
+```{r, warning=FALSE}
+model_df <- binned_df %>%
+  filter(trial < 60) %>%
+  select(c(CA1.1, CA3.1, CA3.2, CA3.3, CA3.4, CA3.5, CA3.6, CA3.7, CA3.8, CA3.9, CA3.10, CA3.11, CA3.12, CA3.13, CA3.14, CA3.15,
+           CA3.16, CA3.17, CA3.18, CA3.19, CA3.20, CA3.21)) %>%
+  data.frame()
+pred_df <- binned_df %>%
+  filter(trial >= 60) %>%
+  select(c(CA3.1, CA3.2, CA3.3, CA3.4, CA3.5, CA3.6, CA3.7, CA3.8, CA3.9, CA3.10, CA3.11, CA3.12, CA3.13, CA3.14, CA3.15,
+           CA3.16, CA3.17, CA3.18, CA3.19, CA3.20, CA3.21)) %>%
+  data.frame()
+pred_res <- binned_df %>%
+  filter(trial >= 60) %>%
+  select(CA1.1)
+model <- acp(CA1.1 ~ ., data = model_df, p = 1, q = 2)
+summary(model)
+pred <- predict(model, newxdata = pred_df, newydata = pred_res)
+mean((pred - pred_res$CA1.1)^2, na.rm = TRUE)
+```
+
+```{r}
+connect <- data.frame(resp = c('CA1.1', 'CA1.2', 'CA1.3', 'CA1.4', 'CA1.5', 'CA1.6', 'CA1.7', 'CA1.8', 'CA1.9', 'CA1.10',
+                                'CA1.11', 'CA1.12', 'CA1.13', 'CA1.14', 'CA1.15'),
+                       CA3.1 = rep(NA, 15),
+                       CA3.2 = rep(NA, 15),
+                       CA3.3 = rep(NA, 15),
+                       CA3.4 = rep(NA, 15),
+                       CA3.5 = rep(NA, 15),
+                       CA3.6 = rep(NA, 15),
+                       CA3.7 = rep(NA, 15),
+                       CA3.8 = rep(NA, 15),
+                       CA3.9 = rep(NA, 15),
+                       CA3.10 = rep(NA, 15),
+                       CA3.11 = rep(NA, 15),
+                       CA3.12 = rep(NA, 15),
+                       CA3.13 = rep(NA, 15),
+                       CA3.14 = rep(NA, 15),
+                       CA3.15 = rep(NA, 15),
+                       CA3.16 = rep(NA, 15),
+                       CA3.17 = rep(NA, 15),
+                       CA3.18 = rep(NA, 15),
+                       CA3.19 = rep(NA, 15),
+                       CA3.20 = rep(NA, 15),
+                       CA3.21 = rep(NA, 15))
+
+for (region in connect$resp) {
+  model_df <- binned_df %>%
+    select(c(region, CA3.1, CA3.2, CA3.3, CA3.4, CA3.5, CA3.6, CA3.7, CA3.8, CA3.9, CA3.10, CA3.11, CA3.12, CA3.13, CA3.14, CA3.15,
+           CA3.16, CA3.17, CA3.18, CA3.19, CA3.20, CA3.21))
+  model <- acp(formula(paste0(region, ' ~ .')), data = model_df, p = 1, q = 2)
+  temp <- summary(model)
+  p_vals <- temp$coefficients[2:22, 4]
+  connect[which(connect$resp == region), ] <- c(region, p_vals)
+}
+```
+
+
+
+
