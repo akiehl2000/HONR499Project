@@ -91,8 +91,13 @@ Exploratory view of data frame:
 summary(binned_df)
 ```
 
-Questions for Gray:  
-- Should predictions be rounded since we're dealing a discrete domain?  
-- How should NA values be handled? Is it safe to convert them to zeros if I notice structural patterns in the NAs?  
-- Help understanding stationarity.  
-- What are the other coefficients at the bottom of the INAR model summary?  
+```{r}
+binned_data %>%
+  mutate(neuron = paste(region, neuron_number, sep = '.')) %>%
+  ungroup() %>%
+  filter(trial == 1) %>%
+  ggplot() +
+  geom_col(aes(binstart, bincount)) +
+  facet_wrap(neuron ~ .) +
+  labs(title='First Trial Neuron Spike Counts', x='Bin Number', y='Spike Count')
+```
