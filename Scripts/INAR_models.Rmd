@@ -85,6 +85,15 @@ for (region in connect$resp) {
 }
 ```
 
+```{r}
+connect %>%
+  pivot_longer(!resp, names_to = 'pred', values_to = 'p_value') %>%
+  ggplot() +
+  geom_tile(aes(pred, resp, fill = as.numeric(p_value))) +
+  scale_fill_continuous() +
+  theme(legend.position = 'None') +
+  labs(title='INAR p-values', x='Predictor', y='Response')
+```
 
 
 
