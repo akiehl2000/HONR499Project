@@ -74,8 +74,10 @@ binned_data <- testing_df %>%
 binned_df  <- binned_data %>%
   mutate(neuron = paste(region, neuron_number, sep = '.')) %>%
   ungroup() %>%
-  select(-c(region, neuron_number, wire, cell)) %>%
+  select(-c(region, neuron_number, wire, cell, outcome)) %>%
   pivot_wider(names_from = neuron, values_from = bincount)
+# temporarily convert NA values to 0
+binned_df[is.na(binned_df)] <- 0
 
 # remove unnecessary data
 remove(testing_df)
