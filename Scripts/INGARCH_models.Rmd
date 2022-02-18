@@ -1,0 +1,193 @@
+---
+title: "INGARCH Modeling"
+author: "Adam Kiehl"
+date: "2/12/2022"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(acp) # INAR model
+library(tscount)
+
+set.seed(499)
+```
+
+Read in binned data frame:
+```{r}
+binned_df <- read.csv('../Data/binned_df.csv')
+```
+
+Prepare data frame for modeling:
+```{r}
+# generate training set
+train_df <- binned_df %>%
+  filter(trial < 10) %>%
+  select(c(CA1.14, CA3.1, CA3.2, CA3.3, CA3.4, CA3.5, CA3.6, CA3.7, CA3.8, CA3.9, CA3.10, CA3.11, CA3.12, CA3.13, CA3.14, CA3.15,
+           CA3.16, CA3.17, CA3.18, CA3.19, CA3.20, CA3.21)) %>%
+  data.frame()
+
+# generate validation set
+valid_df <- binned_df %>%
+  filter(trial == 60) %>%
+  select(c(CA3.1, CA3.2, CA3.3, CA3.4, CA3.5, CA3.6, CA3.7, CA3.8, CA3.9, CA3.10, CA3.11, CA3.12, CA3.13, CA3.14, CA3.15,
+           CA3.16, CA3.17, CA3.18, CA3.19, CA3.20, CA3.21)) %>%
+  data.frame()
+
+# values to compare predicted values with
+valid_pred <- binned_df %>%
+  filter(trial == 60) %>%
+  select(CA1.14)
+```
+
+INGARCH model fit with acp() function:
+```{r}
+# fit INGARCH model
+start <- Sys.time()
+model <- acp(CA1.4 ~ ., data = train_df, p = 1, q = 2)
+print(Sys.time() - start)
+
+summary(model)
+
+# calculate MSE from predicted values
+pred <- predict(model, newxdata = valid_df, newydata = valid_pred)
+mean((pred - valid_pred$CA1.4)^2, na.rm = TRUE)
+```
+
+INGARCH model fit with tsglm() function:
+```{r}
+# fit INGARCH model
+start <- Sys.time()
+model <- tsglm(as.ts(train_df[, 1]), xreg = as.matrix(train_df[, -1]), 
+               model = list(past_obs = 1:5, past_mean = length(old_y)), 
+               link = 'log', distr = 'poisson')
+print(Sys.time() - start)
+
+summary(model)
+
+# calculate MSE from predicted values
+pred <- predict(model, n.ahead = nrow(valid_df), newxreg = valid_df)
+mean((pred[['pred']] - valid_pred$CA1.14)^2, na.rm = TRUE)
+```
+
+Tuning the tsglm() function:
+```{r}
+```
+
+Collect p-values using for loop (experimental):
+```{r}
+connect <- data.frame(resp = c('CA1.1', 'CA1.2', 'CA1.3', 'CA1.4', 'CA1.5', 'CA1.6', 'CA1.7', 'CA1.8', 'CA1.9', 'CA1.10',
+                                'CA1.11', 'CA1.12', 'CA1.13', 'CA1.14', 'CA1.15'),
+                       CA3.1 = rep(NA, 15),
+                       CA3.2 = rep(NA, 15),
+                       CA3.3 = rep(NA, 15),
+                       CA3.4 = rep(NA, 15),
+                       CA3.5 = rep(NA, 15),
+                       CA3.6 = rep(NA, 15),
+                       CA3.7 = rep(NA, 15),
+                       CA3.8 = rep(NA, 15),
+                       CA3.9 = rep(NA, 15),
+                       CA3.10 = rep(NA, 15),
+                       CA3.11 = rep(NA, 15),
+                       CA3.12 = rep(NA, 15),
+                       CA3.13 = rep(NA, 15),
+                       CA3.14 = rep(NA, 15),
+                       CA3.15 = rep(NA, 15),
+                       CA3.16 = rep(NA, 15),
+                       CA3.17 = rep(NA, 15),
+                       CA3.18 = rep(NA, 15),
+                       CA3.19 = rep(NA, 15),
+                       CA3.20 = rep(NA, 15),
+                       CA3.21 = rep(NA, 15))
+
+for (region in connect$resp) {
+  model_df <- binned_df %>%
+    select(c(region, CA3.1, CA3.2, CA3.3, CA3.4, CA3.5, CA3.6, CA3.7, CA3.8, CA3.9, CA3.10, CA3.11, CA3.12, CA3.13, CA3.14, CA3.15,
+           CA3.16, CA3.17, CA3.18, CA3.19, CA3.20, CA3.21))
+  tryCatch(
+    {
+      model <- acp(formula(paste0(region, ' ~ .')), data = model_df, p = 1, q = 2)
+      temp <- summary(model)
+      p_vals <- temp$coefficients[2:22, 4]
+      connect[which(connect$resp == region), ] <- c(region, p_vals)
+    },
+    error=function(cond) {
+      connect[which(connect$resp == region), ] <- rep(NA, ncol(train_df) - 1)
+    }
+  )
+  print(region)
+}
+```
+
+```{r}
+connect <- data.frame(resp = c('CA1.1', 'CA1.2', 'CA1.3', 'CA1.4', 'CA1.5', 'CA1.6', 'CA1.7', 'CA1.8', 'CA1.9', 'CA1.10',
+                                'CA1.11', 'CA1.12', 'CA1.13', 'CA1.14', 'CA1.15'),
+                       beta.1 = rep(NA, 15),
+                       beta.2 = rep(NA, 15),
+                       beta.3 = rep(NA, 15),
+                       beta.4 = rep(NA, 15),
+                       beta.5 = rep(NA, 15),
+                       a.740 = rep(NA, 15),
+                       CA3.1 = rep(NA, 15),
+                       CA3.2 = rep(NA, 15),
+                       CA3.3 = rep(NA, 15),
+                       CA3.4 = rep(NA, 15),
+                       CA3.5 = rep(NA, 15),
+                       CA3.6 = rep(NA, 15),
+                       CA3.7 = rep(NA, 15),
+                       CA3.8 = rep(NA, 15),
+                       CA3.9 = rep(NA, 15),
+                       CA3.10 = rep(NA, 15),
+                       CA3.11 = rep(NA, 15),
+                       CA3.12 = rep(NA, 15),
+                       CA3.13 = rep(NA, 15),
+                       CA3.14 = rep(NA, 15),
+                       CA3.15 = rep(NA, 15),
+                       CA3.16 = rep(NA, 15),
+                       CA3.17 = rep(NA, 15),
+                       CA3.18 = rep(NA, 15),
+                       CA3.19 = rep(NA, 15),
+                       CA3.20 = rep(NA, 15),
+                       CA3.21 = rep(NA, 15))
+
+for (region in connect$resp) {
+  model_df <- binned_df %>%
+    filter(trial < 11) %>%
+    select(c(region, CA3.1, CA3.2, CA3.3, CA3.4, CA3.5, CA3.6, CA3.7, CA3.8, CA3.9, CA3.10, CA3.11, CA3.12, CA3.13, CA3.14, CA3.15,
+           CA3.16, CA3.17, CA3.18, CA3.19, CA3.20, CA3.21))
+  tryCatch(
+    {
+      model <- tsglm(as.ts(model_df[, 1]), xreg = as.matrix(model_df[, -1]), 
+               model = list(past_obs = 1:5, past_mean = 740), 
+               link = 'log', distr = 'poisson')
+      temp <- summary(model)
+      est <- temp$coefficients$Estimate[-1]
+      connect[which(connect$resp == region), ] <- c(region, est)
+      print(paste('Success:', region))
+    },
+    error=function(cond) {
+      connect[which(connect$resp == region), ] <- c(region, rep(NA, ncol(model_df) + 5))
+      print(paste('Error:', region))
+    }
+  )
+}
+```
+
+
+
+
+```{r}
+connect %>%
+  pivot_longer(!resp, names_to = 'pred', values_to = 'est') %>%
+  ggplot() +
+  geom_tile(aes(factor(pred, levels = c('beta.1', 'beta.2', 'beta.3', 'beta.4', 'beta.5', 'a.740', names(train_df[, -1]))),
+                factor(resp, levels = connect$resp), 
+                fill = as.numeric(est))) +
+  scale_fill_continuous() +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +
+  labs(title='INGARCH Coefficient Estimates', x='Predictor', y='Response', fill='')
+```
+
+
+
