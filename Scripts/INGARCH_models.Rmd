@@ -24,47 +24,56 @@ Prepare data frame for modeling:
 gen_df <- function(train, valid, resp) {
   # generate training set
   train_df <- binned_df %>%
-    filter(trial %in% train) %>%
+    filter(trial %in% as.vector(train)) %>%
     select(c(all_of(resp), CA3.1, CA3.2, CA3.3, CA3.4, CA3.5, CA3.6, CA3.7, CA3.8, CA3.9, CA3.10, CA3.11, CA3.12, CA3.13, CA3.14,
              CA3.15, CA3.16, CA3.17, CA3.18, CA3.19, CA3.20, CA3.21)) %>%
     data.frame()
   
   # generate validation set
   valid_df <- binned_df %>%
-    filter(trial %in% valid) %>%
+    filter(trial %in% as.vector(valid)) %>%
     select(c(CA3.1, CA3.2, CA3.3, CA3.4, CA3.5, CA3.6, CA3.7, CA3.8, CA3.9, CA3.10, CA3.11, CA3.12, CA3.13, CA3.14, CA3.15,
              CA3.16, CA3.17, CA3.18, CA3.19, CA3.20, CA3.21)) %>%
     data.frame()
   
   # values to compare predicted values with
   valid_pred <- binned_df %>%
-    filter(trial %in% valid) %>%
+    filter(trial %in% as.vector(valid)) %>%
     select(resp)
   
   # handle empty vectors
   zeros <- c()
   zeros <- c(zeros, which(colSums(train_df) == 0))
   zeros <- c(zeros, which(colSums(valid_df) == 0))
-  train_df <- train_df[, -zeros]
-  valid_df <- valid_df[, -zeros]
+  if (length(zeros) > 0) {
+    train_df <- train_df[, -zeros]
+    valid_df <- valid_df[, -zeros]
+  }
   
   # return data frames
-  return(list(train_df, valid_df, valid_pred))
+  return(list('train_df' = train_df, 'valid_df' = valid_df, 'valid_pred' = valid_pred))
 }
 ```
 
-INGARCH model fit with acp() function:
+INGARCH model fit with acp() function [DOESNT WORK]:
 ```{r}
-# fit INGARCH model
-start <- Sys.time()
-model <- acp(CA1.14 ~ ., data = train_df, p = 1, q = 2)
-print(Sys.time() - start)
-
-summary(model)
-
-# calculate MSE from predicted values
-pred <- predict(model, newxdata = valid_df, newydata = valid_pred)
-mean((pred - valid_pred$CA1.4)^2, na.rm = TRUE)
+# # collect data frames
+# dfs <- gen_df(1:10, 11, 'CA1.1')
+# train_df <- dfs[['train_df']]
+# valid_df <- dfs[['valid_df']]
+# valid_pred <- dfs[['valid_pred']]
+# remove(dfs)
+# 
+# # fit INGARCH model
+# start <- Sys.time()
+# model <- acp(CA1.1 ~ ., data = train_df, p = 2, q = 5)
+# print(Sys.time() - start)
+# 
+# summary(model)
+# 
+# # calculate MSE from predicted values
+# pred <- predict(model, newxdata = valid_df, newydata = valid_pred)
+# mean((pred - valid_pred$CA1.1)^2, na.rm = TRUE)
 ```
 
 INGARCH model fit with tsglm() function:
