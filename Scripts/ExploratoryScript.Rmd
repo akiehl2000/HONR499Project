@@ -100,6 +100,6 @@ binned_data %>%
   filter(trial == 1) %>%
   ggplot() +
   geom_col(aes(binstart, bincount)) +
-  facet_wrap(neuron ~ .) +
+  facet_wrap(factor(neuron, levels = names(binned_df)[13:48]) ~ .) +
   labs(title='First Trial Neuron Spike Counts', x='Bin Number', y='Spike Count')
 ```
