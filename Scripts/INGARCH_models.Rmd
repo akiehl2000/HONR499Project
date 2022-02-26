@@ -103,8 +103,8 @@ cross_valid <- function(resp, p, q, CV) {
       {
         # fit INGARCH model
         model <- tsglm(as.ts(train_df[, 1]), xreg = as.matrix(train_df[, -1]), 
-                     model = list(past_obs = 1:p, past_mean = q), 
-                     link = 'log', distr = 'poisson')
+                       model = list(past_obs = 1:p, past_mean = q), 
+                       link = 'log', distr = 'poisson')
         
         # calculate MSE from predicted values
         pred <- predict(model, n.ahead = nrow(valid_df), newxreg = valid_df)
@@ -112,8 +112,7 @@ cross_valid <- function(resp, p, q, CV) {
         
         if (mse > 10) {
           print(mse)
-          print(pred)
-          print(valid_pred)
+          print(pred[['pred']][which(pred[['pred']] > 10)])
         }
         
         mses[i] <- mse
@@ -164,7 +163,9 @@ for (resp in 'CA1.1') {
   # tuned[[resp]] <- tuning
 }
 
-tuned %>%
+# tuned %>%
+#   arrange(mse)
+tuning %>% 
   arrange(mse)
 ```
 
