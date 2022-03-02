@@ -138,61 +138,65 @@ cross_valid <- function(pred_list, resp_list, p, q) {
 Perform variable selection on the INGARCH model using a forward selection 
 technique based on the effect sizes from the full model. 
 ```{r, message=FALSE, error=FALSE}
-# define empty list to store best variable subsets
-var_subset = list()
-
-for (resp in resp_names) {
-  # collect training data frame
-  dfs <- gen_df(1:3, 21, pred_names, resp)
-  train_df <- dfs[['train_df']]
-  remove(dfs)
-
-  tryCatch(
-    {
-      # fit full model
-      model <- tsglm(as.ts(train_df[, 1]), xreg = as.matrix(train_df[, -1]), 
-               model = list(past_obs = 1, past_mean = 2), 
-               link = 'log', distr = 'poisson')
-      
-      # extract estimated coefficients from fitted model
-      temp <- summary(model)
-      est <- temp$coefficients$Estimate[-c(1:3, 25)]
-      
-      full_model_select <- data.frame(var = pred_names, coefs = est) %>% 
-        arrange(desc(coefs)) %>%
-        top_n(10) %>%
-        select(var) %>%
-        unlist()
-    },
-    error = function(err) {
-      print(paste('Error:', err))
-    }
-  )
+var_select <- function() {
+  # define empty list to store best variable subsets
+  var_subset = list()
   
-  # define empty vector to store CV MSE results for forward selection
-  mses <- rep(NA, 10)
+  for (resp in resp_names) {
+    # collect training data frame
+    dfs <- gen_df(1:3, 21, pred_names, resp)
+    train_df <- dfs[['train_df']]
+    remove(dfs)
   
-  # perform forward selection with chosen variables
-  for (i in 1:length(full_model_select)) {
-    preds <- full_model_select[1:i]
-    
     tryCatch(
       {
-        mses[i] <- cross_valid(preds, resp, 1, 2)
-      }, 
+        # fit full model
+        model <- tsglm(as.ts(train_df[, 1]), xreg = as.matrix(train_df[, -1]), 
+                 model = list(past_obs = 1, past_mean = 2), 
+                 link = 'log', distr = 'poisson')
+        
+        # extract estimated coefficients from fitted model
+        temp <- summary(model)
+        est <- temp$coefficients$Estimate[-c(1:3, 25)]
+        
+        full_model_select <- data.frame(var = pred_names, coefs = est) %>% 
+          arrange(desc(coefs)) %>%
+          top_n(5) %>%
+          select(var) %>%
+          unlist()
+      },
       error = function(err) {
         print(paste('Error:', err))
       }
     )
+    
+    # define empty vector to store CV MSE results for forward selection
+    mses <- rep(NA, 5)
+    
+    # perform forward selection with chosen variables
+    for (i in 1:length(full_model_select)) {
+      preds <- full_model_select[1:i]
+      
+      tryCatch(
+        {
+          mses[i] <- cross_valid(preds, resp, 1, 2)
+        }, 
+        error = function(err) {
+          print(paste('Error:', err))
+        }
+      )
+    }
+    
+    # store selected best subset 
+    forward_select <- data.frame(var_inc = 1:5,
+                                 mse = mses)
+    var_subset[[resp]] <- full_model_select[1:forward_select$var_inc[which(
+      forward_select$mse == min(forward_select$mse))]]
+    
+    print(paste(resp, 'done...'))
   }
   
-  # store selected best subset 
-  forward_select <- data.frame(var_inc = 1:10,
-                               mse = mses)
-  var_subset[[resp]] <- full_model_select[1:forward_select$var_inc[which(
-    forward_select$mse == min(forward_select$mse))]]
-  
-  print(paste(resp, 'done...'))
+  return(var_subset)
 }
 ```
 
@@ -202,46 +206,51 @@ for (resp in resp_names) {
 Tune the INGARCH model by looping through parameter values and calling the 
 `cross_valid` function above:
 ```{r}
-# define parameters
-Pmax <- 2
-Qmax <- 2
-
-# define empty data frame for storing tuned values
-tuned <- data.frame(resp = resp_names, 
-                    pred = rep(NA, length(rep_names)),
-                    p = rep(NA, length(rep_names)),
-                    q = rep(NA, length(rep_names)))
-                    
-# establish start time of tuning process
-start <- Sys.time()
-
-# loop over response variables
-for (resp in resp_names) {
-  # define empty data frame to store MSE results
-  tuning <- data.frame(p = rep(1:Pmax, each = Qmax),
-                     q = rep(1:Qmax, times = Pmax),
-                     mse = rep(NA, (Pmax * Qmax)))
+model_tune <- function(Pmax, Qmax) {
+  # collect optimal predictor subsets
+  var_subset <- var_select()
   
-  for (p in 1:Pmax) {
-    for (q in 1:Qmax) {
-      tuning$mse[which(tuning$p == p & tuning$q == q)] <- cross_valid(
-        var_subset[[resp]], resp, p, q)
-      
-      print(paste('Done with p =', p, '& q=', q, 'in', Sys.time() - start, 
-                  'minutes...'))
+  # define empty data frame for storing tuned values
+  tuned <- data.frame(resp = resp_names, 
+                      pred = rep(NA, length(rep_names)),
+                      p = rep(NA, length(rep_names)),
+                      q = rep(NA, length(rep_names)))
+                      
+  # establish start time of tuning process
+  start <- Sys.time()
+  
+  # loop over response variables
+  for (resp in resp_names) {
+    # define empty data frame to store MSE results
+    tuning <- data.frame(p = rep(1:Pmax, each = Qmax),
+                       q = rep(1:Qmax, times = Pmax),
+                       mse = rep(NA, (Pmax * Qmax)))
+    
+    for (p in 1:Pmax) {
+      for (q in 1:Qmax) {
+        tuning$mse[which(tuning$p == p & tuning$q == q)] <- cross_valid(
+          var_subset[[resp]], resp, p, q)
+        
+        print(paste('Done with p =', p, '& q=', q, 'in', Sys.time() - start, 
+                    'minutes...'))
+      }
     }
+    
+    tuned_p <- tuning$p[which(tuning$mse == min(tuning$mse))]
+    tuned_q <- tuning$q[which(tuning$mse == min(tuning$mse))]
+    tuned[which(tuned$resp == resp), ] <- c(resp, var_subset[[resp]], 
+                                            tuned_p, tuned_q)
   }
   
-  tuned_p <- tuning$p[which(tuning$mse == min(tuning$mse))]
-  tuned_q <- tuning$q[which(tuning$mse == min(tuning$mse))]
-  tuned[which(tuned$resp == resp), ] <- c(resp, var_subset[[resp]], 
-                                          tuned_p, tuned_q)
+  return(tuned)
 }
-
-tuned
 ```
 
-Collect fitted model coefficientestimates from one-to-many models into data 
+```{r}
+tuned <- model_tune(1, 2); tuned
+```
+
+Collect fitted model coefficient estimates from one-to-many models into data 
 frame:
 ```{r}
 # define empty data frame to store coefficients
