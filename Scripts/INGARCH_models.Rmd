@@ -138,11 +138,13 @@ cross_valid <- function(pred_list, resp_list, p, q) {
 Perform variable selection on the INGARCH model using a forward selection 
 technique based on the effect sizes from the full model. 
 ```{r, message=FALSE, error=FALSE}
-var_select <- function() {
+var_select <- function(start) {
   # define empty list to store best variable subsets
   var_subset = list()
   
   for (resp in resp_names) {
+    print(paste('Beginning variable selection for:', resp))
+    
     # collect training data frame
     dfs <- gen_df(1:3, 21, pred_names, resp)
     train_df <- dfs[['train_df']]
@@ -175,6 +177,8 @@ var_select <- function() {
     
     # perform forward selection with chosen variables
     for (i in 1:length(full_model_select)) {
+      print(paste('selecting top', i, 'variables...'))
+      
       preds <- full_model_select[1:i]
       
       tryCatch(
@@ -192,9 +196,9 @@ var_select <- function() {
                                  mse = mses)
     var_subset[[resp]] <- full_model_select[1:forward_select$var_inc[which(
       forward_select$mse == min(forward_select$mse))]]
-    
-    print(paste(resp, 'done...'))
   }
+  
+  print(paste('Completed after', (Sys.time() - start), 'minutes'))
   
   return(var_subset)
 }
@@ -206,9 +210,9 @@ var_select <- function() {
 Tune the INGARCH model by looping through parameter values and calling the 
 `cross_valid` function above:
 ```{r}
-model_tune <- function(Pmax, Qmax) {
+model_tune <- function(Pmax, Qmax, start) {
   # collect optimal predictor subsets
-  var_subset <- var_select()
+  var_subset <- var_select(start)
   
   # define empty data frame for storing tuned values
   tuned <- data.frame(resp = resp_names, 
@@ -221,6 +225,8 @@ model_tune <- function(Pmax, Qmax) {
   
   # loop over response variables
   for (resp in resp_names) {
+    print(paste('Beginning model tuning for:', resp))
+    
     # define empty data frame to store MSE results
     tuning <- data.frame(p = rep(1:Pmax, each = Qmax),
                        q = rep(1:Qmax, times = Pmax),
@@ -231,8 +237,7 @@ model_tune <- function(Pmax, Qmax) {
         tuning$mse[which(tuning$p == p & tuning$q == q)] <- cross_valid(
           var_subset[[resp]], resp, p, q)
         
-        print(paste('Done with p =', p, '& q=', q, 'in', Sys.time() - start, 
-                    'minutes...'))
+        print(paste('tuning with p = ', p, ' & q= ', q, '...', sep = ''))
       }
     }
     
@@ -242,12 +247,15 @@ model_tune <- function(Pmax, Qmax) {
                                             tuned_p, tuned_q)
   }
   
+  print(paste('Completed after', (Sys.time() - start), 'minutes'))
+  
   return(tuned)
 }
 ```
 
 ```{r}
-tuned <- model_tune(1, 2); tuned
+start <- Sys.time()
+tuned <- model_tune(1, 2, start); tuned
 ```
 
 Collect fitted model coefficient estimates from one-to-many models into data 
