@@ -137,7 +137,7 @@ cross_valid <- function(pred_list, resp_list, p, q) {
 
 Perform variable selection on the INGARCH model using a forward selection 
 technique based on the effect sizes from the full model. 
-```{r}
+```{r, message=FALSE, error=FALSE}
 # define empty list to store best variable subsets
 var_subset = list()
 
@@ -206,37 +206,39 @@ Tune the INGARCH model by looping through parameter values and calling the
 Pmax <- 2
 Qmax <- 2
 
-# define empty data frame to store MSE results
-tuning <- data.frame(p = rep(1:Pmax, each = Qmax),
-                     q = rep(1:Qmax, times = Pmax),
-                     mse = rep(NA, Pmax * Qmax))
-
+# define empty data frame for storing tuned values
+tuned <- data.frame(resp = resp_names, 
+                    pred = rep(NA, length(rep_names)),
+                    p = rep(NA, length(rep_names)),
+                    q = rep(NA, length(rep_names)))
+                    
 # establish start time of tuning process
 start <- Sys.time()
 
 # loop over response variables
-for (resp in 'CA1.1') {
+for (resp in resp_names) {
   # define empty data frame to store MSE results
-  # tuning <- data.frame(p = rep(1:5, each = 5),
-  #                    q = rep(1:5, times = 5),
-  #                    mse = rep(NA, 25))
+  tuning <- data.frame(p = rep(1:Pmax, each = Qmax),
+                     q = rep(1:Qmax, times = Pmax),
+                     mse = rep(NA, (Pmax * Qmax)))
   
   for (p in 1:Pmax) {
     for (q in 1:Qmax) {
-      tuning$mse[which(tuning$p==p & tuning$q==q)] <- cross_valid(resp, p, q)
+      tuning$mse[which(tuning$p == p & tuning$q == q)] <- cross_valid(
+        var_subset[[resp]], resp, p, q)
       
       print(paste('Done with p =', p, '& q=', q, 'in', Sys.time() - start, 
                   'minutes...'))
     }
   }
   
-  # tuned[[resp]] <- tuning
+  tuned_p <- tuning$p[which(tuning$mse == min(tuning$mse))]
+  tuned_q <- tuning$q[which(tuning$mse == min(tuning$mse))]
+  tuned[which(tuned$resp == resp), ] <- c(resp, var_subset[[resp]], 
+                                          tuned_p, tuned_q)
 }
 
-# tuned %>%
-#   arrange(mse)
-tuning %>% 
-  arrange(mse)
+tuned
 ```
 
 Collect fitted model coefficientestimates from one-to-many models into data 
