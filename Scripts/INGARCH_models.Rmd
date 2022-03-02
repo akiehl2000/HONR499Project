@@ -82,21 +82,22 @@ gen_df <- function(train, valid, resp) {
 
 A function for cross-validation given the parameters of a model specification:
 ```{r}
-cross_valid <- function(resp, p, q, CV) {
+cross_valid <- function(resp, p, q) {
   # define empty vector to store MSE values
-  mses <- rep(NA, CV)
+  mses <- rep(NA, 8)
   
-  for (i in 1:CV) {
-    # choose trials randomly to serve as training and validation sets
-    trials <- sample(1:80, 2, replace = FALSE)
+  for (i in 1:8) {
+    # select trials for training and validation (PICK ONE)
+    # blocking cross-validation method is progressive
+    trials <- list((10 * (i - 1) + 1):(10 * i - 2), (10 * i - 1):(10 * i))
+    # time series split cross-validation method is inclusive
+    # trials <- list(1:(10 * i - 2), (10 * i - 1):(10 * i))
+    
     # collect data frames
-    dfs <- gen_df(trials[1], trials[2], resp)
+    dfs <- gen_df(trials[[1]], trials[[2]], resp)
     train_df <- dfs[['train_df']]
-    valid_df <- dfs[['valid_df']]
-    # filter validation set to first 100 entries for time constraint
-    valid_df <- valid_df[1:100, ]
-    valid_pred <- dfs[['valid_pred']]
-    valid_pred <- valid_pred[1:100,1]
+    valid_df <- dfs[['valid_df']][1:100, ]
+    valid_pred <- dfs[['valid_pred']][1:100, ]
     remove(dfs)
     
     tryCatch(
@@ -105,21 +106,26 @@ cross_valid <- function(resp, p, q, CV) {
         model <- tsglm(as.ts(train_df[, 1]), xreg = as.matrix(train_df[, -1]), 
                        model = list(past_obs = 1:p, past_mean = q), 
                        link = 'log', distr = 'poisson')
-        
+      }, 
+      error = function(err) {
+        print(paste('Model fitting error on (', p, ', ', q, '): ', err, 
+                    sep = ''))
+      }
+    )
+    
+    tryCatch(
+      {
         # calculate MSE from predicted values
         pred <- predict(model, n.ahead = nrow(valid_df), newxreg = valid_df)
         mse <- mean((pred[['pred']] - valid_pred)^2, na.rm = TRUE)
         
-        if (mse > 10) {
-          print(mse)
-          print(pred[['pred']][which(pred[['pred']] > 10)])
-        }
-        
-        mses[i] <- mse
+        mses[i] <- round(mse, 4)
       }, 
-      error = function(err){
-        print(paste(p, ',', q, ',', err))
+      error = function(err) {
+        print(paste('Model evaluation error on (', p, ', ', q, '): ', err, 
+                    sep = ''))
       }
+      
     )
   }
   
@@ -133,9 +139,8 @@ Tune the INGARCH model by looping through parameter values and calling the
 `corss_valid` function above:
 ```{r}
 # define parameters
-CV <- 10
-Pmax <- 5
-Qmax <- 5
+Pmax <- 2
+Qmax <- 2
 
 # define empty data frame to store MSE results
 tuning <- data.frame(p = rep(1:Pmax, each = Qmax),
@@ -154,10 +159,11 @@ for (resp in 'CA1.1') {
   
   for (p in 1:Pmax) {
     for (q in 1:Qmax) {
-      tuning$mse[which(tuning$p == p & tuning$q == q)] <- cross_valid(resp, 
-                                                                      p, q, CV)
+      tuning$mse[which(tuning$p==p & tuning$q==q)] <- cross_valid(resp, p, q)
+      
+      print(paste('Done with p =', p, '& q=', q, 'in', Sys.time() - start, 
+                  'minutes...'))
     }
-    print(paste('Done with p =', p, 'in', Sys.time() - start, 'minutes...'))
   }
   
   # tuned[[resp]] <- tuning
