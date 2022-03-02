@@ -46,6 +46,11 @@ pred_names <- c('CA3.1', 'CA3.2', 'CA3.3', 'CA3.4', 'CA3.5', 'CA3.6', 'CA3.7',
 A function for subsetting and cleaning data frames for modeling:
 ```{r}
 gen_df <- function(train_trials, valid_trials, pred, resp) {
+  # train_trails: a vector of trials to be included in the training set
+  # valid_trials: a vector of trials to be included in the validation set
+  # pred: a vector of predictor variables to be included in the data sets
+  # resp: a vector of response variables to be included in the data sets
+  
   # generate training set
   train_df <- binned_df %>%
     filter(trial %in% as.vector(train_trials)) %>%
@@ -82,6 +87,11 @@ gen_df <- function(train_trials, valid_trials, pred, resp) {
 A function for cross-validation given the parameters of a model specification:
 ```{r, message=FALSE, warning=FALSE, error=FALSE}
 cross_valid <- function(pred_list, resp_list, p, q) {
+  # pred_list: a vector of predictor variables to be included in the data sets
+  # resp_list: a vector of response variables to be included in the data sets
+  # p: the number of past observations to model on
+  # q: the number of lags to model the conditional mean on
+  
   # define empty vector to store MSE values
   mses <- rep(NA, 2)
   
@@ -138,6 +148,9 @@ Perform variable selection on the INGARCH model using a forward selection
 technique based on the effect sizes from the full model. 
 ```{r, message=FALSE, warning=FALSE, error=FALSE}
 var_select <- function(start, select) {
+  # start: the start time of the model tuning procedure
+  # select: the maximum number of predictor variables to model on
+
   # define empty list to store best variable subsets
   var_subset = list()
   
@@ -212,6 +225,11 @@ Tune the INGARCH model by looping through parameter values and calling the
 `cross_valid` function above:
 ```{r, message=FALSE, warning=FALSE, error=FALSE}
 model_tune <- function(Pmax, Qmax, start, select) {
+  # Pmax: the maximum number of past observations to model on
+  # Qmax: the maximum lagged conditional mean to model on
+  # start: the start time of the model tuning procedure
+  # select: the maximum number of predictor variables to model on
+
   # collect optimal predictor subsets
   var_subset <- var_select(start, select)
   
