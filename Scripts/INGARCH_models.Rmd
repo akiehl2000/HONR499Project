@@ -206,7 +206,7 @@ var_select <- function(start, select) {
     }
     
     # store selected best subset 
-    forward_select <<- data.frame(var_inc = 1:select,
+    forward_select <- data.frame(var_inc = 1:select,
                                  mse = mses)
     var_subset[[resp]] <<- full_model_select[1:forward_select$var_inc[which(
       forward_select$mse == min(forward_select$mse))]]
@@ -234,36 +234,33 @@ model_tune <- function(Pmax, Qmax, start, select) {
   
   # define empty data frame for storing tuned values
   tuned <<- data.frame(resp = resp_names, 
-                      pred = rep(NA, length(rep_names)),
-                      p = rep(NA, length(rep_names)),
-                      q = rep(NA, length(rep_names)))
-                      
-  # establish start time of tuning process
-  start <- Sys.time()
+                      p = rep(NA, length(resp_names)),
+                      q = rep(NA, length(resp_names)))
   
   # loop over response variables
   for (resp in resp_names) {
     print(paste('Beginning model tuning for:', resp))
     
     # define empty data frame to store MSE results
-    tuning <<- data.frame(p = rep(1:Pmax, each = Qmax),
+    tuning <- data.frame(p = rep(1:Pmax, each = Qmax),
                        q = rep(1:Qmax, times = Pmax),
                        mse = rep(NA, (Pmax * Qmax)))
     
     # loop over parameter values of interest
     for (p in 1:Pmax) {
       for (q in 1:Qmax) {
+        print(paste('tuning with p=', p, ' & q=', q, '...', sep=''))
+        
         # calculate model MSE with given parameters
-        tuning$mse[which(tuning$p == p & tuning$q == q)] <<- cross_valid(
-          var_subset[[resp]], resp, p, q)
+        tuning$mse[which(tuning$p == p & tuning$q == q)] <- cross_valid(
+          as.vector(var_subset[[resp]]), resp, p, q)
       }
     }
     
     # save optimal tuned model parameters
     tuned_p <- tuning$p[which(tuning$mse == min(tuning$mse))]
     tuned_q <- tuning$q[which(tuning$mse == min(tuning$mse))]
-    tuned[which(tuned$resp == resp), ] <<- c(resp, var_subset[[resp]], 
-                                            tuned_p, tuned_q)
+    tuned[which(tuned$resp == resp), ] <<- c(resp, tuned_p, tuned_q)
     
     print(paste('Completed after', (Sys.time() - start), 'minutes'))
   }
@@ -275,7 +272,7 @@ model_tune <- function(Pmax, Qmax, start, select) {
 ```{r, message=FALSE, warning=FALSE, error=FALSE}
 # execute variable selection and model tuning
 start <- Sys.time()
-tuned <- model_tune(1, 2, start, 3); tuned
+tuned <- model_tune(2, 2, start, 3); tuned
 ```
 
 Collect fitted model coefficient estimates from one-to-many models into data 
@@ -284,11 +281,7 @@ frame:
 # define empty data frame to store coefficients
 coefs <- data.frame(resp = resp_names,
                        beta.1 = rep(NA, 15),
-                       beta.2 = rep(NA, 15),
-                       beta.3 = rep(NA, 15),
-                       beta.4 = rep(NA, 15),
-                       beta.5 = rep(NA, 15),
-                       a.740 = rep(NA, 15),
+                       a.2 = rep(NA, 15),
                        CA3.1 = rep(NA, 15),
                        CA3.2 = rep(NA, 15),
                        CA3.3 = rep(NA, 15),
