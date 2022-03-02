@@ -46,22 +46,22 @@ pred_names <- c('CA3.1', 'CA3.2', 'CA3.3', 'CA3.4', 'CA3.5', 'CA3.6', 'CA3.7',
 
 A function for subsetting and cleaning data frames for modeling:
 ```{r}
-gen_df <- function(train, valid, resp) {
+gen_df <- function(train_trials, valid_trials, pred, resp) {
   # generate training set
   train_df <- binned_df %>%
-    filter(trial %in% as.vector(train)) %>%
-    select(c(all_of(resp), all_of(pred_names), trial)) %>%
+    filter(trial %in% as.vector(train_trials)) %>%
+    select(c(all_of(resp), all_of(pred), trial)) %>%
     data.frame()
   
   # generate validation set
   valid_df <- binned_df %>%
-    filter(trial %in% as.vector(valid)) %>%
-    select(c(all_of(pred_names), trial)) %>%
+    filter(trial %in% as.vector(valid_trials)) %>%
+    select(c(all_of(pred), trial)) %>%
     data.frame()
   
   # values to compare predicted values with
   valid_pred <- binned_df %>%
-    filter(trial %in% as.vector(valid)) %>%
+    filter(trial %in% as.vector(valid_trials)) %>%
     select(all_of(resp))
   
   # handle empty vectors
@@ -82,11 +82,11 @@ gen_df <- function(train, valid, resp) {
 
 A function for cross-validation given the parameters of a model specification:
 ```{r}
-cross_valid <- function(resp, p, q) {
+cross_valid <- function(pred_list, resp_list, p, q) {
   # define empty vector to store MSE values
-  mses <- rep(NA, 8)
+  mses <- rep(NA, 2)
   
-  for (i in 1:8) {
+  for (i in 1:2) {
     # select trials for training and validation (PICK ONE)
     # blocking cross-validation method is progressive
     trials <- list((10 * (i - 1) + 1):(10 * i - 2), (10 * i - 1):(10 * i))
@@ -94,7 +94,7 @@ cross_valid <- function(resp, p, q) {
     # trials <- list(1:(10 * i - 2), (10 * i - 1):(10 * i))
     
     # collect data frames
-    dfs <- gen_df(trials[[1]], trials[[2]], resp)
+    dfs <- gen_df(trials[[1]], trials[[2]], pred_list, resp_list)
     train_df <- dfs[['train_df']]
     valid_df <- dfs[['valid_df']][1:100, ]
     valid_pred <- dfs[['valid_pred']][1:100, ]
@@ -133,10 +133,74 @@ cross_valid <- function(resp, p, q) {
 }
 ```
 
+# Variable Selection
+
+Perform variable selection on the INGARCH model using a forward selection 
+technique based on the effect sizes from the full model. 
+```{r}
+# define empty list to store best variable subsets
+var_subset = list()
+
+for (resp in resp_names) {
+  # collect training data frame
+  dfs <- gen_df(1:3, 21, pred_names, resp)
+  train_df <- dfs[['train_df']]
+  remove(dfs)
+
+  tryCatch(
+    {
+      # fit full model
+      model <- tsglm(as.ts(train_df[, 1]), xreg = as.matrix(train_df[, -1]), 
+               model = list(past_obs = 1, past_mean = 2), 
+               link = 'log', distr = 'poisson')
+      
+      # extract estimated coefficients from fitted model
+      temp <- summary(model)
+      est <- temp$coefficients$Estimate[-c(1:3, 25)]
+      
+      full_model_select <- data.frame(var = pred_names, coefs = est) %>% 
+        arrange(desc(coefs)) %>%
+        top_n(10) %>%
+        select(var) %>%
+        unlist()
+    },
+    error = function(err) {
+      print(paste('Error:', err))
+    }
+  )
+  
+  # define empty vector to store CV MSE results for forward selection
+  mses <- rep(NA, 10)
+  
+  # perform forward selection with chosen variables
+  for (i in 1:length(full_model_select)) {
+    preds <- full_model_select[1:i]
+    
+    tryCatch(
+      {
+        mses[i] <- cross_valid(preds, resp, 1, 2)
+      }, 
+      error = function(err) {
+        print(paste('Error:', err))
+      }
+    )
+  }
+  
+  # store selected best subset 
+  forward_select <- data.frame(var_inc = 1:10,
+                               mse = mses)
+  var_subset[[resp]] <- full_model_select[1:forward_select$var_inc[which(
+    forward_select$mse == min(forward_select$mse))]]
+  
+  print(paste(resp, 'done...'))
+}
+```
+
+
 # Model Fitting
 
 Tune the INGARCH model by looping through parameter values and calling the 
-`corss_valid` function above:
+`cross_valid` function above:
 ```{r}
 # define parameters
 Pmax <- 2
@@ -210,7 +274,7 @@ coefs <- data.frame(resp = resp_names,
 
 # loop through response variables
 for (region in resp_names) {
-  dfs <- gen_df(1:10, 11, resp)
+  dfs <- gen_df(1:10, 11, pred_names, resp)
   train_df <- dfs[['train_df']]
   remove(dfs)
 
@@ -254,7 +318,7 @@ p <- 5
 q <- 10
 
 # collect data frames
-dfs <- gen_df(1:5, 10, 'CA1.1')
+dfs <- gen_df(1:5, 10, pred_names, 'CA1.1')
 train_df <- dfs[['train_df']]
 valid_df <- dfs[['valid_df']]
 valid_pred <- dfs[['valid_pred']]
