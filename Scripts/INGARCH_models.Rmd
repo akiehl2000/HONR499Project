@@ -152,7 +152,7 @@ var_select <- function(start, select) {
   # select: the maximum number of predictor variables to model on
 
   # define empty list to store best variable subsets
-  var_subset = list()
+  var_subset <<- list()
   
   for (resp in resp_names) {
     print(paste('Beginning variable selection for:', resp))
@@ -174,7 +174,7 @@ var_select <- function(start, select) {
         est <- temp$coefficients$Estimate[-c(1:3, 25)]
         
         # save predictors with largest effect size for forward selection
-        full_model_select <- data.frame(var = pred_names, coef = est) %>% 
+        full_model_select <<- data.frame(var = pred_names, coef = est) %>% 
           arrange(desc(coef)) %>%
           top_n(select, coef) %>%
           select(var) %>%
@@ -206,9 +206,9 @@ var_select <- function(start, select) {
     }
     
     # store selected best subset 
-    forward_select <- data.frame(var_inc = 1:select,
+    forward_select <<- data.frame(var_inc = 1:select,
                                  mse = mses)
-    var_subset[[resp]] <- full_model_select[1:forward_select$var_inc[which(
+    var_subset[[resp]] <<- full_model_select[1:forward_select$var_inc[which(
       forward_select$mse == min(forward_select$mse))]]
     
     print(paste('Completed after', (Sys.time() - start), 'minutes'))
@@ -217,7 +217,6 @@ var_select <- function(start, select) {
   return(var_subset)
 }
 ```
-
 
 # Model Fitting
 
@@ -234,7 +233,7 @@ model_tune <- function(Pmax, Qmax, start, select) {
   var_subset <- var_select(start, select)
   
   # define empty data frame for storing tuned values
-  tuned <- data.frame(resp = resp_names, 
+  tuned <<- data.frame(resp = resp_names, 
                       pred = rep(NA, length(rep_names)),
                       p = rep(NA, length(rep_names)),
                       q = rep(NA, length(rep_names)))
@@ -247,7 +246,7 @@ model_tune <- function(Pmax, Qmax, start, select) {
     print(paste('Beginning model tuning for:', resp))
     
     # define empty data frame to store MSE results
-    tuning <- data.frame(p = rep(1:Pmax, each = Qmax),
+    tuning <<- data.frame(p = rep(1:Pmax, each = Qmax),
                        q = rep(1:Qmax, times = Pmax),
                        mse = rep(NA, (Pmax * Qmax)))
     
@@ -255,7 +254,7 @@ model_tune <- function(Pmax, Qmax, start, select) {
     for (p in 1:Pmax) {
       for (q in 1:Qmax) {
         # calculate model MSE with given parameters
-        tuning$mse[which(tuning$p == p & tuning$q == q)] <- cross_valid(
+        tuning$mse[which(tuning$p == p & tuning$q == q)] <<- cross_valid(
           var_subset[[resp]], resp, p, q)
       }
     }
@@ -263,7 +262,7 @@ model_tune <- function(Pmax, Qmax, start, select) {
     # save optimal tuned model parameters
     tuned_p <- tuning$p[which(tuning$mse == min(tuning$mse))]
     tuned_q <- tuning$q[which(tuning$mse == min(tuning$mse))]
-    tuned[which(tuned$resp == resp), ] <- c(resp, var_subset[[resp]], 
+    tuned[which(tuned$resp == resp), ] <<- c(resp, var_subset[[resp]], 
                                             tuned_p, tuned_q)
     
     print(paste('Completed after', (Sys.time() - start), 'minutes'))
