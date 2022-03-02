@@ -1,0 +1,105 @@
+---
+title: "Exploratory Script"
+author: "Adam Kiehl"
+date: "2/11/2022"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+```
+
+Read in raw spike train data:
+```{r}
+raw_data <- read.csv('../Data/trialspikedata.csv')
+```
+
+Exploratory view of data:
+```{r}
+summary(raw_data)
+```
+
+`region`: Either CA1 or CA3  
+`wire`: Number of wire on MEA  
+`cell`: Number of cell on the wire  
+`neuron_number`: Assigned number within the region  
+`spiketime`: Exact time of spike  
+`trial`: Trial number within the session  
+`trialstart`: Assigned beginning of trial  
+`offertime`: Time of memory stimulus  
+`offer_type`: Either A or B, which stimulus given  
+`outcome`: Either success (nonmatch) or failure (match)  
+`nosepokestart`: Begin time for nosepoke  
+`nosepokeend`: End time for nosepoke  
+`completiontime`: Time when attempts to non-match  
+`in_testing`: Whether spike occurs during a trial  
+  
+Generate data frame of binned count data:
+```{r, warning=FALSE}
+BINWIDTH <- 0.05
+
+# function for binning spike train counts
+make_counts <- function(times, start, end, width){
+  cuts <- seq(start, end, width)
+  if(cuts[length(cuts)] < end){
+    cuts <- c(cuts, cuts[length(cuts)] + width)
+  }  
+  counts <- rep(0, length(cuts) - 1)
+  b <- .bincode(times, cuts, right = FALSE)
+  ub <- unique(b)
+  counts[ub] <- tabulate(b)[ub]
+  return(counts)
+}
+
+# filter out non-experimental recordings
+testing_df <- raw_data %>% 
+  filter(trial > 0, spiketime <= completiontime, spiketime >= trialstart)
+
+# get unique trial, neuron pairs in data
+trial_data <- testing_df %>%
+  select(-spiketime) %>% 
+  distinct()
+
+# binned count data frame
+binned_data <- testing_df %>% 
+  group_by(region, neuron_number, trial) %>% 
+  group_modify(~ { data_frame(bincount = make_counts(.x$spiketime, .x$trialstart[1], .x$completiontime[nrow(.x)], BINWIDTH),
+                              binnumb = 1:length(bincount), 
+                              binstart = (binnumb-1) * BINWIDTH + .x$trialstart[1],
+                              binend = (binnumb) * BINWIDTH + .x$trialstart[1])}) %>%
+  left_join(trial_data, by=c("region", "neuron_number", "trial"))
+
+# pivot wider to make neurons predictors
+binned_df  <- binned_data %>%
+  mutate(neuron = paste(region, neuron_number, sep = '.')) %>%
+  ungroup() %>%
+  select(-c(region, neuron_number, wire, cell, outcome)) %>%
+  pivot_wider(names_from = neuron, values_from = bincount)
+# temporarily convert NA values to 0
+binned_df[is.na(binned_df)] <- 0
+
+# remove unnecessary data
+remove(testing_df)
+remove(trial_data)
+
+# write to local .csv file
+binned_df %>%
+  write.csv('../Data/binned_df.csv')
+```
+
+Exploratory view of data frame:
+```{r}
+summary(binned_df)
+```
+
+```{r}
+binned_data %>%
+  mutate(neuron = paste(region, neuron_number, sep = '.')) %>%
+  ungroup() %>%
+  filter(trial == 1) %>%
+  ggplot() +
+  geom_col(aes(binstart, bincount)) +
+  facet_wrap(factor(neuron, levels = names(binned_df)[13:48]) ~ .) +
+  labs(title='First Trial Neuron Spike Counts', x='Bin Number', y='Spike Count')
+```

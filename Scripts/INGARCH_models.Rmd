@@ -1,0 +1,270 @@
+---
+title: "INGARCH Modeling"
+author: "Adam Kiehl"
+date: "2/12/2022"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(acp) # INAR model
+library(tscount)
+
+set.seed(499)
+```
+
+## Introduction
+
+The univariate INGARCH(p, q) model fit here using the `tsglm` function in the 
+`tscount` package is specified according to Davis, et al. like:
+$$
+\begin{aligned}
+X_t|F_{t-1} &\sim Poisson(\lambda_t) \\
+\lambda_t &= d + \sum_{j=1}^p b_{j} X_{t-j} + \sum_{j=1}^q a_j \lambda_{t-j}
+\end{aligned}
+$$
+The marginal mean of the response poisson distribution is described in a
+manner resembling a classical ARMA model, with the `p` parameter defining the 
+extent of the autoregressive component and the `q` parameter defining the moving
+average component. 
+
+## Setup
+
+The binned data frame is read and feature names are defined:
+```{r}
+binned_df <- read.csv('../Data/binned_df.csv')
+
+resp_names <- c('CA1.1', 'CA1.2', 'CA1.3', 'CA1.4', 'CA1.5', 'CA1.6', 'CA1.7', 
+                'CA1.8', 'CA1.9', 'CA1.10', 'CA1.11', 'CA1.12', 'CA1.13', 
+                'CA1.14', 'CA1.15')
+pred_names <- c('CA3.1', 'CA3.2', 'CA3.3', 'CA3.4', 'CA3.5', 'CA3.6', 'CA3.7', 
+                'CA3.8', 'CA3.9', 'CA3.10', 'CA3.11', 'CA3.12', 'CA3.13', 
+                'CA3.14', 'CA3.15', 'CA3.16', 'CA3.17', 'CA3.18', 'CA3.19', 
+                'CA3.20', 'CA3.21')
+```
+
+A function for subsetting and cleaning data frames for modeling:
+```{r}
+gen_df <- function(train, valid, resp) {
+  # generate training set
+  train_df <- binned_df %>%
+    filter(trial %in% as.vector(train)) %>%
+    select(c(all_of(resp), all_of(pred_names), trial)) %>%
+    data.frame()
+  
+  # generate validation set
+  valid_df <- binned_df %>%
+    filter(trial %in% as.vector(valid)) %>%
+    select(c(all_of(pred_names), trial)) %>%
+    data.frame()
+  
+  # values to compare predicted values with
+  valid_pred <- binned_df %>%
+    filter(trial %in% as.vector(valid)) %>%
+    select(all_of(resp))
+  
+  # handle empty vectors
+  zeros <- c()
+  zeros <- c(zeros, which(colSums(train_df) == 0))
+  zeros <- c(zeros, which(colSums(valid_df) == 0))
+  if (length(zeros) > 0) {
+    train_df <- train_df[, -zeros]
+    valid_df <- valid_df[, -zeros]
+  }
+  
+  # return data frames
+  return(list('train_df' = train_df, 
+              'valid_df' = valid_df, 
+              'valid_pred' = valid_pred))
+}
+```
+
+A function for cross-validation given the parameters of a model specification:
+```{r}
+cross_valid <- function(resp, p, q, CV) {
+  # define empty vector to store MSE values
+  mses <- rep(NA, CV)
+  
+  for (i in 1:CV) {
+    # choose trials randomly to serve as training and validation sets
+    trials <- sample(1:80, 2, replace = FALSE)
+    # collect data frames
+    dfs <- gen_df(trials[1], trials[2], resp)
+    train_df <- dfs[['train_df']]
+    valid_df <- dfs[['valid_df']]
+    # filter validation set to first 100 entries for time constraint
+    valid_df <- valid_df[1:100, ]
+    valid_pred <- dfs[['valid_pred']]
+    valid_pred <- valid_pred[1:100,1]
+    remove(dfs)
+    
+    tryCatch(
+      {
+        # fit INGARCH model
+        model <- tsglm(as.ts(train_df[, 1]), xreg = as.matrix(train_df[, -1]), 
+                       model = list(past_obs = 1:p, past_mean = q), 
+                       link = 'log', distr = 'poisson')
+        
+        # calculate MSE from predicted values
+        pred <- predict(model, n.ahead = nrow(valid_df), newxreg = valid_df)
+        mse <- mean((pred[['pred']] - valid_pred)^2, na.rm = TRUE)
+        
+        if (mse > 10) {
+          print(mse)
+          print(pred[['pred']][which(pred[['pred']] > 10)])
+        }
+        
+        mses[i] <- mse
+      }, 
+      error = function(err){
+        print(paste(p, ',', q, ',', err))
+      }
+    )
+  }
+  
+  return(mean(mses, na.rm = TRUE))
+}
+```
+
+# Model Fitting
+
+Tune the INGARCH model by looping through parameter values and calling the 
+`corss_valid` function above:
+```{r}
+# define parameters
+CV <- 10
+Pmax <- 5
+Qmax <- 5
+
+# define empty data frame to store MSE results
+tuning <- data.frame(p = rep(1:Pmax, each = Qmax),
+                     q = rep(1:Qmax, times = Pmax),
+                     mse = rep(NA, Pmax * Qmax))
+
+# establish start time of tuning process
+start <- Sys.time()
+
+# loop over response variables
+for (resp in 'CA1.1') {
+  # define empty data frame to store MSE results
+  # tuning <- data.frame(p = rep(1:5, each = 5),
+  #                    q = rep(1:5, times = 5),
+  #                    mse = rep(NA, 25))
+  
+  for (p in 1:Pmax) {
+    for (q in 1:Qmax) {
+      tuning$mse[which(tuning$p == p & tuning$q == q)] <- cross_valid(resp, 
+                                                                      p, q, CV)
+    }
+    print(paste('Done with p =', p, 'in', Sys.time() - start, 'minutes...'))
+  }
+  
+  # tuned[[resp]] <- tuning
+}
+
+# tuned %>%
+#   arrange(mse)
+tuning %>% 
+  arrange(mse)
+```
+
+Collect fitted model coefficientestimates from one-to-many models into data 
+frame:
+```{r}
+# define empty data frame to store coefficients
+coefs <- data.frame(resp = resp_names,
+                       beta.1 = rep(NA, 15),
+                       beta.2 = rep(NA, 15),
+                       beta.3 = rep(NA, 15),
+                       beta.4 = rep(NA, 15),
+                       beta.5 = rep(NA, 15),
+                       a.740 = rep(NA, 15),
+                       CA3.1 = rep(NA, 15),
+                       CA3.2 = rep(NA, 15),
+                       CA3.3 = rep(NA, 15),
+                       CA3.4 = rep(NA, 15),
+                       CA3.5 = rep(NA, 15),
+                       CA3.6 = rep(NA, 15),
+                       CA3.7 = rep(NA, 15),
+                       CA3.8 = rep(NA, 15),
+                       CA3.9 = rep(NA, 15),
+                       CA3.10 = rep(NA, 15),
+                       CA3.11 = rep(NA, 15),
+                       CA3.12 = rep(NA, 15),
+                       CA3.13 = rep(NA, 15),
+                       CA3.14 = rep(NA, 15),
+                       CA3.15 = rep(NA, 15),
+                       CA3.16 = rep(NA, 15),
+                       CA3.17 = rep(NA, 15),
+                       CA3.18 = rep(NA, 15),
+                       CA3.19 = rep(NA, 15),
+                       CA3.20 = rep(NA, 15),
+                       CA3.21 = rep(NA, 15))
+
+# loop through response variables
+for (region in resp_names) {
+  dfs <- gen_df(1:10, 11, resp)
+  train_df <- dfs[['train_df']]
+  remove(dfs)
+
+  tryCatch(
+    {
+      model <- tsglm(as.ts(train_df[, 1]), xreg = as.matrix(train_df[, -1]), 
+               model = list(past_obs = 1:5, past_mean = 740), 
+               link = 'log', distr = 'poisson')
+      temp <- summary(model)
+      est <- temp$coefficients$Estimate[-1]
+      coefs[which(coefs$resp == region), ] <- c(region, est)
+      print(paste('Success:', region))
+    },
+    error=function(cond) {
+      coefs[which(coefs$resp == region), ] <- c(region, 
+                                                    rep(NA, ncol(train_df) + 5))
+      print(paste('Error:', region))
+    }
+  )
+}
+```
+
+Plot coefficient estimates from one-to-many models:
+```{r}
+coefs %>%
+  pivot_longer(!resp, names_to = 'pred', values_to = 'est') %>%
+  ggplot() +
+  geom_tile(aes(factor(pred, levels = c('beta.1', 'beta.2', 'beta.3', 'beta.4', 
+                                        'beta.5', 'a.740', pred_names)),
+                factor(resp, levels = resp_names), 
+                fill = as.numeric(est))) +
+  scale_fill_continuous() +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +
+  labs(title='INGARCH Coefficient Estimates', 
+       x='Predictor', y='Response', fill='')
+```
+
+Testing area for quick single model fitting: 
+```{r}
+p <- 5
+q <- 10
+
+# collect data frames
+dfs <- gen_df(1:5, 10, 'CA1.1')
+train_df <- dfs[['train_df']]
+valid_df <- dfs[['valid_df']]
+valid_pred <- dfs[['valid_pred']]
+remove(dfs)
+
+# fit INGARCH model
+start <- Sys.time()
+model <- tsglm(as.ts(train_df[, 1]), xreg = as.matrix(train_df[, -1]), 
+               model = list(past_obs = 1:p, past_mean = q), 
+               link = 'log', distr = 'poisson')
+print(Sys.time() - start)
+
+summary(model)
+
+# calculate MSE from predicted values
+pred <- predict(model, n.ahead = nrow(valid_df), newxreg = valid_df)
+mean((pred[['pred']] - valid_pred$CA1.1)^2, na.rm = TRUE)
+```
+
