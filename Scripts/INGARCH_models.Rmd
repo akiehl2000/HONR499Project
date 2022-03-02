@@ -244,8 +244,11 @@ coefs %>%
 
 Testing area for quick single model fitting: 
 ```{r}
+p <- 5
+q <- 10
+
 # collect data frames
-dfs <- gen_df(1:10, 11, 'CA1.1')
+dfs <- gen_df(1:5, 10, 'CA1.1')
 train_df <- dfs[['train_df']]
 valid_df <- dfs[['valid_df']]
 valid_pred <- dfs[['valid_pred']]
@@ -254,7 +257,7 @@ remove(dfs)
 # fit INGARCH model
 start <- Sys.time()
 model <- tsglm(as.ts(train_df[, 1]), xreg = as.matrix(train_df[, -1]), 
-               model = list(past_obs = 1:5, past_mean = 15), 
+               model = list(past_obs = 1:p, past_mean = q), 
                link = 'log', distr = 'poisson')
 print(Sys.time() - start)
 
