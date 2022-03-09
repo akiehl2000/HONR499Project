@@ -93,9 +93,9 @@ cross_valid <- function(pred_list, resp_list, p, q) {
   # q: the number of lags to model the conditional mean on
   
   # define empty vector to store MSE values
-  mses <- rep(NA, 2)
+  mses <- rep(NA, 8)
   
-  for (i in 1:2) {
+  for (i in 1:8) {
     # select trials for training and validation (PICK ONE)
     # blocking cross-validation method is progressive
     trials <- list((10 * (i - 1) + 1):(10 * i - 2), (10 * i - 1):(10 * i))
@@ -105,8 +105,11 @@ cross_valid <- function(pred_list, resp_list, p, q) {
     # collect data frames
     dfs <- gen_df(trials[[1]], trials[[2]], pred_list, resp_list)
     train_df <- dfs[['train_df']]
-    valid_df <- dfs[['valid_df']][1:100, ]
-    valid_pred <- dfs[['valid_pred']][1:100, ]
+    valid_df <- dfs[['valid_df']]
+    # valid_df <- dfs[['valid_df']][1:100, ]
+    valid_pred <- unlist(dfs[['valid_pred']])
+    # valid_pred <- dfs[['valid_pred']][1:100, ]
+
     remove(dfs)
     
     tryCatch(
@@ -147,12 +150,13 @@ cross_valid <- function(pred_list, resp_list, p, q) {
 Perform variable selection on the INGARCH model using a forward selection 
 technique based on the effect sizes from the full model. 
 ```{r, message=FALSE, warning=FALSE, error=FALSE}
-var_select <- function(start, select) {
-  # start: the start time of the model tuning procedure
+var_select <- function(select, start) {
   # select: the maximum number of predictor variables to model on
+  # start: the start time of the model tuning procedure
 
   # define empty list to store best variable subsets
-  var_subset <<- list()
+  predictors <<- list()
+  var_select_mses <<- list()
   
   for (resp in resp_names) {
     print(paste('Beginning variable selection for:', resp))
@@ -208,13 +212,14 @@ var_select <- function(start, select) {
     # store selected best subset 
     forward_select <- data.frame(var_inc = 1:select,
                                  mse = mses)
-    var_subset[[resp]] <<- full_model_select[1:forward_select$var_inc[which(
+    predictors[[resp]] <<- full_model_select[1:forward_select$var_inc[which(
       forward_select$mse == min(forward_select$mse))]]
+    var_select_mses[[resp]] <<- mses
     
     print(paste('Completed after', (Sys.time() - start), 'minutes'))
   }
   
-  return(var_subset)
+  return(predictors)
 }
 ```
 
@@ -223,19 +228,17 @@ var_select <- function(start, select) {
 Tune the INGARCH model by looping through parameter values and calling the 
 `cross_valid` function above:
 ```{r, message=FALSE, warning=FALSE, error=FALSE}
-model_tune <- function(Pmax, Qmax, start, select) {
+model_tune <- function(Pmax, Qmax, predictors, start) {
   # Pmax: the maximum number of past observations to model on
   # Qmax: the maximum lagged conditional mean to model on
+  # predictors: a list of optimal predictor sets for each response
   # start: the start time of the model tuning procedure
-  # select: the maximum number of predictor variables to model on
 
-  # collect optimal predictor subsets
-  var_subset <- var_select(start, select)
-  
   # define empty data frame for storing tuned values
   tuned <<- data.frame(resp = resp_names, 
                       p = rep(NA, length(resp_names)),
                       q = rep(NA, length(resp_names)))
+  model_tune_mses <<- list()
   
   # loop over response variables
   for (resp in resp_names) {
@@ -253,7 +256,7 @@ model_tune <- function(Pmax, Qmax, start, select) {
         
         # calculate model MSE with given parameters
         tuning$mse[which(tuning$p == p & tuning$q == q)] <- cross_valid(
-          as.vector(var_subset[[resp]]), resp, p, q)
+          as.vector(predictors[[resp]]), resp, p, q)
       }
     }
     
@@ -261,6 +264,7 @@ model_tune <- function(Pmax, Qmax, start, select) {
     tuned_p <- tuning$p[which(tuning$mse == min(tuning$mse))]
     tuned_q <- tuning$q[which(tuning$mse == min(tuning$mse))]
     tuned[which(tuned$resp == resp), ] <<- c(resp, tuned_p, tuned_q)
+    model_tune_mses[[resp]] <<- tuning$mses
     
     print(paste('Completed after', (Sys.time() - start), 'minutes'))
   }
@@ -272,7 +276,21 @@ model_tune <- function(Pmax, Qmax, start, select) {
 ```{r, message=FALSE, warning=FALSE, error=FALSE}
 # execute variable selection and model tuning
 start <- Sys.time()
-tuned <- model_tune(2, 2, start, 3); tuned
+
+# collect optimal predictor subsets
+predictors <- var_select(10, start)
+  
+# find optimal model parameters
+tuned <- model_tune(2, 2, predictors, start)
+```
+
+```{r}
+# save results to local directory
+predictors %>%
+  saveRDS('../Temp/predictors.RData')
+
+tuned %>%
+  saveRDS('../Temp/tuned.RData')
 ```
 
 Collect fitted model coefficient estimates from one-to-many models into data 
@@ -303,26 +321,29 @@ coefs <- data.frame(resp = resp_names,
                        CA3.19 = rep(NA, 15),
                        CA3.20 = rep(NA, 15),
                        CA3.21 = rep(NA, 15))
+coefs <- list()
 
 # loop through response variables
-for (region in resp_names) {
-  dfs <- gen_df(1:10, 11, pred_names, resp)
+for (resp in resp_names) {
+  dfs <- gen_df(1:5, 6, as.vector(predictors[[resp]]), resp)
   train_df <- dfs[['train_df']]
   remove(dfs)
+  
+  p <- tuned$p[which(tuned$resp == resp)]
+  q <- tuned$q[which(tuned$resp == resp)]
 
   tryCatch(
     {
       model <- tsglm(as.ts(train_df[, 1]), xreg = as.matrix(train_df[, -1]), 
-               model = list(past_obs = 1:5, past_mean = 740), 
+               model = list(past_obs = 1:p, past_mean = q), 
                link = 'log', distr = 'poisson')
       temp <- summary(model)
       est <- temp$coefficients$Estimate[-1]
-      coefs[which(coefs$resp == region), ] <- c(region, est)
+      coefs[[resp]] <- est
       print(paste('Success:', region))
     },
     error=function(cond) {
-      coefs[which(coefs$resp == region), ] <- c(region, 
-                                                    rep(NA, ncol(train_df) + 5))
+      coefs[[resp]] <- NA
       print(paste('Error:', region))
     }
   )
@@ -358,7 +379,8 @@ remove(dfs)
 
 # fit INGARCH model
 start <- Sys.time()
-model <- tsglm(as.ts(train_df[, 1]), xreg = as.matrix(train_df[, -1]), 
+model <- tsglm(as.ts(train_df[, 1]), 
+               xreg = as.matrix(train_df[, -1]), 
                model = list(past_obs = 1:p, past_mean = q), 
                link = 'log', distr = 'poisson')
 print(Sys.time() - start)
