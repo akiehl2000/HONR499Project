@@ -1,0 +1,384 @@
+---
+title: "GLAR Modeling"
+author: "Adam Kiehl"
+date: "3/8/2022"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(tscount) # GLAR model
+
+set.seed(499)
+```
+
+## Introduction
+
+The univariate GLAR(p) model fit here using the `tsglm` function in the 
+`tscount` package is specified according to Davis, et al. like:
+$$
+\begin{aligned}
+X_t|F_{t-1} &\sim Poisson(\lambda_t) \\
+\lambda_t &= d + \sum_{j=1}^p b_{j} log(X_{t-j})
+\end{aligned}
+$$
+The marginal mean of the response poisson distribution is described in a
+manner resembling a simple autoregressive model, with the `p` parameter defining
+the extent of the autoregressive lag.  
+
+## Setup
+
+The binned data frame is read and feature names are defined:
+```{r}
+binned_df <- read.csv('../Data/binned_df.csv')
+
+resp_names <- c('CA1.1', 'CA1.2', 'CA1.3', 'CA1.4', 'CA1.5', 'CA1.6', 'CA1.7', 
+                'CA1.8', 'CA1.9', 'CA1.10', 'CA1.11', 'CA1.12', 'CA1.13', 
+                'CA1.14', 'CA1.15')
+pred_names <- c('CA3.1', 'CA3.2', 'CA3.3', 'CA3.4', 'CA3.5', 'CA3.6', 'CA3.7', 
+                'CA3.8', 'CA3.9', 'CA3.10', 'CA3.11', 'CA3.12', 'CA3.13', 
+                'CA3.14', 'CA3.15', 'CA3.16', 'CA3.17', 'CA3.18', 'CA3.19', 
+                'CA3.20', 'CA3.21')
+```
+
+A function for subsetting and cleaning data frames for modeling:
+```{r}
+gen_df <- function(train_trials, valid_trials, pred, resp) {
+  # train_trails: a vector of trials to be included in the training set
+  # valid_trials: a vector of trials to be included in the validation set
+  # pred: a vector of predictor variables to be included in the data sets
+  # resp: a vector of response variables to be included in the data sets
+  
+  # generate training set
+  train_df <- binned_df %>%
+    filter(trial %in% as.vector(train_trials)) %>%
+    select(c(all_of(resp), all_of(pred), trial)) %>%
+    data.frame()
+  
+  # generate validation set
+  valid_df <- binned_df %>%
+    filter(trial %in% as.vector(valid_trials)) %>%
+    select(c(all_of(pred), trial)) %>%
+    data.frame()
+  
+  # values to compare predicted values with
+  valid_pred <- binned_df %>%
+    filter(trial %in% as.vector(valid_trials)) %>%
+    select(all_of(resp))
+  
+  # handle empty vectors
+  zeros <- c()
+  zeros <- c(zeros, which(colSums(train_df) == 0))
+  zeros <- c(zeros, which(colSums(valid_df) == 0))
+  if (length(zeros) > 0) {
+    train_df <- train_df[, -zeros]
+    valid_df <- valid_df[, -zeros]
+  }
+  
+  # return data frames
+  return(list('train_df' = train_df, 
+              'valid_df' = valid_df, 
+              'valid_pred' = valid_pred))
+}
+```
+
+A function for cross-validation given the parameters of a model specification:
+```{r, message=FALSE, warning=FALSE, error=FALSE}
+cross_valid <- function(pred_list, resp_list, p) {
+  # pred_list: a vector of predictor variables to be included in the data sets
+  # resp_list: a vector of response variables to be included in the data sets
+  # p: the number of past observations to model on
+  # q: the number of lags to model the conditional mean on
+  
+  # define empty vector to store MSE values
+  mses <- rep(NA, 8)
+  
+  for (i in 1:8) {
+    # select trials for training and validation (PICK ONE)
+    # blocking cross-validation method is progressive
+    trials <- list((10 * (i - 1) + 1):(10 * i - 2), (10 * i - 1):(10 * i))
+    # time series split cross-validation method is inclusive
+    # trials <- list(1:(10 * i - 2), (10 * i - 1):(10 * i))
+    
+    # collect data frames
+    dfs <- gen_df(trials[[1]], trials[[2]], pred_list, resp_list)
+    train_df <- dfs[['train_df']]
+    valid_df <- dfs[['valid_df']]
+    # valid_df <- dfs[['valid_df']][1:100, ]
+    valid_pred <- unlist(dfs[['valid_pred']])
+    # valid_pred <- dfs[['valid_pred']][1:100, ]
+
+    remove(dfs)
+    
+    tryCatch(
+      {
+        # fit GLAR model
+        model <- tsglm(as.ts(train_df[, 1]), xreg = as.matrix(train_df[, -1]), 
+                       model = list(past_obs = 1:p), 
+                       link = 'log', distr = 'poisson')
+      }, 
+      error = function(err) {
+        print(paste('Model fitting error on (', p, ', ', q, '): ', err, 
+                    sep = ''))
+      }
+    )
+    
+    tryCatch(
+      {
+        # calculate MSE from predicted values
+        pred <- predict(model, n.ahead = nrow(valid_df), newxreg = valid_df)
+        mse <- mean((pred[['pred']] - valid_pred)^2, na.rm = TRUE)
+        
+        mses[i] <- round(mse, 4)
+      }, 
+      error = function(err) {
+        print(paste('Model evaluation error on (', p, ', ', q, '): ', err, 
+                    sep = ''))
+      }
+      
+    )
+  }
+  
+  return(mean(mses, na.rm = TRUE))
+}
+```
+
+# Variable Selection
+
+Perform variable selection on the GLAR model using a forward selection 
+technique based on the effect sizes from the full model. 
+```{r, message=FALSE, warning=FALSE, error=FALSE}
+var_select <- function(select, start) {
+  # select: the maximum number of predictor variables to model on
+  # start: the start time of the model tuning procedure
+
+  # define empty list to store best variable subsets
+  predictors <<- list()
+  var_select_mses <<- list()
+  
+  for (resp in resp_names) {
+    print(paste('Beginning variable selection for:', resp))
+    
+    # collect training data frame
+    dfs <- gen_df(1:3, 21, pred_names, resp)
+    train_df <- dfs[['train_df']]
+    remove(dfs)
+  
+    tryCatch(
+      {
+        # fit full model
+        model <- tsglm(as.ts(train_df[, 1]), xreg = as.matrix(train_df[, -1]), 
+                 model = list(past_obs = 1), 
+                 link = 'log', distr = 'poisson')
+        
+        # extract estimated coefficients from fitted model
+        temp <- summary(model)
+        est <- temp$coefficients$Estimate[-c(1:3, 25)]
+        
+        # save predictors with largest effect size for forward selection
+        full_model_select <<- data.frame(var = pred_names, coef = est) %>% 
+          arrange(desc(coef)) %>%
+          top_n(select, coef) %>%
+          select(var) %>%
+          unlist()
+      },
+      error = function(err) {
+        print(paste('Error:', err))
+      }
+    )
+    
+    # define empty vector to store CV MSE results for forward selection
+    mses <- rep(NA, select)
+    
+    # perform forward selection with chosen variables
+    for (i in 1:length(full_model_select)) {
+      print(paste('selecting top', i, 'variables...'))
+      
+      preds <- full_model_select[1:i]
+      
+      tryCatch(
+        {
+          # calculate model MSE with given predictor subset
+          mses[i] <- cross_valid(preds, resp, 1, 2)
+        }, 
+        error = function(err) {
+          print(paste('Error:', err))
+        }
+      )
+    }
+    
+    # store selected best subset 
+    forward_select <- data.frame(var_inc = 1:select,
+                                 mse = mses)
+    predictors[[resp]] <<- full_model_select[1:forward_select$var_inc[which(
+      forward_select$mse == min(forward_select$mse))]]
+    var_select_mses[[resp]] <<- mses
+    
+    print(paste('Completed after', (Sys.time() - start), 'minutes'))
+  }
+  
+  return(predictors)
+}
+```
+
+# Model Fitting
+
+Tune the GLAR model by looping through parameter values and calling the 
+`cross_valid` function above:
+```{r, message=FALSE, warning=FALSE, error=FALSE}
+model_tune <- function(Pmax, predictors, start) {
+  # Pmax: the maximum number of past observations to model on
+  # predictors: a list of optimal predictor sets for each response
+  # start: the start time of the model tuning procedure
+
+  # define empty data frame for storing tuned values
+  tuned <<- data.frame(resp = resp_names, 
+                      p = rep(NA, length(resp_names)))
+  model_tune_mses <<- list()
+  
+  # loop over response variables
+  for (resp in resp_names) {
+    print(paste('Beginning model tuning for:', resp))
+    
+    # define empty data frame to store MSE results
+    tuning <- data.frame(p = 1:Pmax,
+                         mse = rep(NA, Pmax))
+    
+    # loop over parameter values of interest
+    for (p in 1:Pmax) {
+      print(paste('tuning with p=', p, '...', sep=''))
+        
+      # calculate model MSE with given parameters
+      tuning$mse[which(tuning$p == p)] <- cross_valid(
+        as.vector(predictors[[resp]]), resp, p)
+    }
+    
+    # save optimal tuned model parameters
+    tuned_p <- tuning$p[which(tuning$mse == min(tuning$mse))]
+    tuned[which(tuned$resp == resp), ] <<- c(resp, tuned_p)
+    model_tune_mses[[resp]] <<- tuning$mses
+    
+    print(paste('Completed after', (Sys.time() - start), 'minutes'))
+  }
+  
+  return(tuned)
+}
+```
+
+```{r, message=FALSE, warning=FALSE, error=FALSE}
+# execute variable selection and model tuning
+start <- Sys.time()
+
+# collect optimal predictor subsets
+predictors <- var_select(10, start)
+  
+# find optimal model parameters
+tuned <- model_tune(2, predictors, start)
+```
+
+```{r}
+# save results to local directory
+predictors %>%
+  saveRDS('../Temp/predictors.RData')
+
+tuned %>%
+  saveRDS('../Temp/tuned.RData')
+```
+
+Collect fitted model coefficient estimates from one-to-many models into data 
+frame:
+```{r}
+# define empty data frame to store coefficients
+coefs <- data.frame(resp = resp_names,
+                       beta.1 = rep(NA, 15),
+                       CA3.1 = rep(NA, 15),
+                       CA3.2 = rep(NA, 15),
+                       CA3.3 = rep(NA, 15),
+                       CA3.4 = rep(NA, 15),
+                       CA3.5 = rep(NA, 15),
+                       CA3.6 = rep(NA, 15),
+                       CA3.7 = rep(NA, 15),
+                       CA3.8 = rep(NA, 15),
+                       CA3.9 = rep(NA, 15),
+                       CA3.10 = rep(NA, 15),
+                       CA3.11 = rep(NA, 15),
+                       CA3.12 = rep(NA, 15),
+                       CA3.13 = rep(NA, 15),
+                       CA3.14 = rep(NA, 15),
+                       CA3.15 = rep(NA, 15),
+                       CA3.16 = rep(NA, 15),
+                       CA3.17 = rep(NA, 15),
+                       CA3.18 = rep(NA, 15),
+                       CA3.19 = rep(NA, 15),
+                       CA3.20 = rep(NA, 15),
+                       CA3.21 = rep(NA, 15))
+coefs <- list()
+
+# loop through response variables
+for (resp in resp_names) {
+  dfs <- gen_df(1:5, 6, as.vector(predictors[[resp]]), resp)
+  train_df <- dfs[['train_df']]
+  remove(dfs)
+  
+  p <- tuned$p[which(tuned$resp == resp)]
+
+  tryCatch(
+    {
+      model <- tsglm(as.ts(train_df[, 1]), xreg = as.matrix(train_df[, -1]), 
+               model = list(past_obs = 1:p), 
+               link = 'log', distr = 'poisson')
+      temp <- summary(model)
+      est <- temp$coefficients$Estimate[-1]
+      coefs[[resp]] <- est
+      print(paste('Success:', region))
+    },
+    error=function(cond) {
+      coefs[[resp]] <- NA
+      print(paste('Error:', region))
+    }
+  )
+}
+```
+
+Plot coefficient estimates from one-to-many models:
+```{r}
+coefs %>%
+  pivot_longer(!resp, names_to = 'pred', values_to = 'est') %>%
+  ggplot() +
+  geom_tile(aes(factor(pred, levels = c('beta.1', 'beta.2', 'beta.3', 'beta.4', 
+                                        'beta.5', 'a.740', pred_names)),
+                factor(resp, levels = resp_names), 
+                fill = as.numeric(est))) +
+  scale_fill_continuous() +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +
+  labs(title='GLAR Coefficient Estimates', 
+       x='Predictor', y='Response', fill='')
+```
+
+Testing area for quick single model fitting: 
+```{r}
+p <- 5
+
+# collect data frames
+dfs <- gen_df(1:5, 10, pred_names, 'CA1.1')
+train_df <- dfs[['train_df']]
+valid_df <- dfs[['valid_df']]
+valid_pred <- dfs[['valid_pred']]
+remove(dfs)
+
+# fit GLAR model
+start <- Sys.time()
+model <- tsglm(as.ts(train_df[, 1]), 
+               xreg = as.matrix(train_df[, -1]), 
+               model = list(past_obs = 1:p), 
+               link = 'log', distr = 'poisson')
+print(Sys.time() - start)
+
+summary(model)
+
+# calculate MSE from predicted values
+pred <- predict(model, n.ahead = nrow(valid_df), newxreg = valid_df)
+mean((pred[['pred']] - valid_pred$CA1.1)^2, na.rm = TRUE)
+```
+
