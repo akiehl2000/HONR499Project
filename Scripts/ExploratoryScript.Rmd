@@ -103,3 +103,44 @@ binned_data %>%
   facet_wrap(factor(neuron, levels = names(binned_df)[13:48]) ~ .) +
   labs(title='First Trial Neuron Spike Counts', x='Bin Number', y='Spike Count')
 ```
+
+```{r}
+norm_cc <- matrix(NA, nrow = length(c(pred_names, resp_names)), 
+                  ncol = length(c(pred_names, resp_names))) %>% 
+  as.data.frame() %>%
+  mutate(var2 = c(pred_names, resp_names))
+names(norm_cc) <- c(pred_names, resp_names, 'var2')
+                     
+for (var1 in c(pred_names, resp_names)) {
+  for (var2 in c(pred_names, resp_names)) {
+    if (var1 == var2) {
+      break
+    }
+    
+    temp <- ccf(binned_df[, var1], binned_df[, var2], plot = FALSE)
+    norm_cc[which(norm_cc$var2 == var2), var1] <- temp$acf[ceiling(length(temp$acf / 2))]
+  }
+}
+
+var2_vec <- c()
+for (i in 1:nrow(norm_cc)) {
+  var2_vec <- c(var2_vec, rep(norm_cc$var2[i], (37 - i - 1)))
+}
+```
+
+```{r}
+norm_cc %>%
+  select(-var2) %>%
+  pivot_longer(cols = c(pred_names, resp_names), 
+               names_to = 'var1', values_to = 'corr') %>%
+  na.omit(corr) %>%
+  mutate(var2 = var2_vec) %>%
+  ggplot() +
+  geom_tile(aes(factor(var1, levels = c(pred_names, resp_names)), 
+                factor(var2, levels = c(pred_names, resp_names)), 
+                fill = corr)) +
+  theme(axis.text.x = element_text(angle = 45, vjust = .65)) +
+  labs(title = 'Normalized Cross Correlation Matrix', 
+       x = 'Variable', y = 'Variable', fill = 'Correlation')
+```
+
