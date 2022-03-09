@@ -340,11 +340,11 @@ for (resp in resp_names) {
       temp <- summary(model)
       est <- temp$coefficients$Estimate[-1]
       coefs[[resp]] <- est
-      print(paste('Success:', region))
+      print(paste('Success:', resp))
     },
     error=function(cond) {
       coefs[[resp]] <- NA
-      print(paste('Error:', region))
+      print(paste('Error:', resp))
     }
   )
 }
