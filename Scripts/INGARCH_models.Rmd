@@ -285,6 +285,12 @@ tuned <- model_tune(2, 2, predictors, start)
 ```
 
 ```{r}
+start <- Sys.time()
+tuned <- model_tune(10, 10, predictors, start)
+```
+
+
+```{r}
 # save results to local directory
 predictors %>%
   saveRDS('../Temp/predictors.RData')
