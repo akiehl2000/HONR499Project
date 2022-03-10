@@ -179,7 +179,7 @@ var_select <- function(select, start) {
         
         # save predictors with largest effect size for forward selection
         full_model_select <<- data.frame(var = pred_names, coef = est) %>% 
-          arrange(desc(coef)) %>%
+          arrange(desc(abs(coef))) %>%
           top_n(select, coef) %>%
           select(var) %>%
           unlist()
