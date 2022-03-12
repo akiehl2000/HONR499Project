@@ -37,7 +37,7 @@ summary(raw_data)
   
 Generate data frame of binned count data:
 ```{r, warning=FALSE}
-BINWIDTH <- 0.05
+BINWIDTH <- 0.5
 
 # function for binning spike train counts
 make_counts <- function(times, start, end, width){
@@ -118,7 +118,8 @@ for (var1 in c(pred_names, resp_names)) {
     }
     
     temp <- ccf(binned_df[, var1], binned_df[, var2], plot = FALSE)
-    norm_cc[which(norm_cc$var2 == var2), var1] <- temp$acf[ceiling(length(temp$acf / 2))]
+    # norm_cc[which(norm_cc$var2 == var2), var1] <- temp$acf[ceiling(length(temp$acf / 2))]
+    norm_cc[which(norm_cc$var2 == var2), var1] <- max(temp$acf)
   }
 }
 
