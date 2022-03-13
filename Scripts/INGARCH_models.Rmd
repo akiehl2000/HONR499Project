@@ -264,7 +264,7 @@ model_tune <- function(Pmax, Qmax, predictors, start) {
     tuned_p <- tuning$p[which(tuning$mse == min(tuning$mse))]
     tuned_q <- tuning$q[which(tuning$mse == min(tuning$mse))]
     tuned[which(tuned$resp == resp), ] <<- c(resp, tuned_p, tuned_q)
-    model_tune_mses[[resp]] <<- tuning$mses
+    model_tune_mses[[resp]] <<- tuning$mse
     
     print(paste('Completed after', (Sys.time() - start), 'minutes'))
   }
@@ -281,14 +281,8 @@ start <- Sys.time()
 predictors <- var_select(10, start)
   
 # find optimal model parameters
-tuned <- model_tune(2, 2, predictors, start)
+tuned <- model_tune(5, 5, predictors, start)
 ```
-
-```{r}
-start <- Sys.time()
-tuned <- model_tune(10, 10, predictors, start)
-```
-
 
 ```{r}
 # save results to local directory
