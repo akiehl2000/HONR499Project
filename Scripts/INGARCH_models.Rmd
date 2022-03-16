@@ -534,14 +534,25 @@ coefs %>%
        x='Predictor', y='Response', fill='')
 ```
 
+# Testing Area
 
+Generate model diagnostic plots for selected model:
 ```{r}
-model_test <- readRDS('../Models/INGARCH/model_CA1.5')
-plot(model_test)
+dist <- 'poisson'
+resp <- 'CA1.1'
+
+if (dist == 'poisson') {
+  readRDS(paste('../Models/INGARCH_Pois/model_', resp, sep = '')) %>% 
+    plot()
+} else {
+  readRDS(paste('../Models/INGARCH_NBinom/model_', resp, sep = '')) %>% 
+    plot()
+}
 ```
 
-Testing area for quick single model fitting: 
+Generate summary and MSE for quick model testing:
 ```{r}
+dist <- 'poisson'
 resp <- 'CA1.1'
 
 # collect data frames
@@ -552,20 +563,15 @@ valid_pred <- dfs[['valid_pred']]
 remove(dfs)
 
 # fit INGARCH model
-start <- Sys.time()
-model <- tsglm(as.ts(train_df[, 1]), 
+test_model <- tsglm(as.ts(train_df[, 1]), 
                xreg = as.matrix(train_df[, -1]), 
                model = list(past_obs = 1:p, past_mean = q), 
                link = 'log', 
-               distr = 'nbinom')
-print(Sys.time() - start)
+               distr = dist)
 
-summary(model)
+summary(test_model)
 
 # calculate MSE from predicted values
-pred <- predict(model, n.ahead = nrow(valid_df), newxreg = valid_df)
+pred <- predict(test_model, n.ahead = nrow(valid_df), newxreg = valid_df)
 mean((pred[['pred']] - valid_pred[, resp])^2, na.rm = TRUE)
-
-plot(model)
 ```
-
