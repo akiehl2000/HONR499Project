@@ -412,6 +412,9 @@ getCoefs <- function(predictors, dist) {
     coefs[which(coefs$resp == resp), nms] <- est
   }
   
+  coefs %>%
+    saveRDS('../Optimize/INGARCH_Pois/coefs.RData')
+  
   return(coefs)
 }
 ```
@@ -454,7 +457,7 @@ test_mses <- fitOpt(predictors, tuned, dist)
 
 Collect estimated coefficients from optimal poisson models:
 ```{r}
-ceofs <- getCoefs(predictors, dist)
+coefs <- getCoefs(predictors, dist)
 ```
 
 Plot coefficient estimates from poisson models:
@@ -515,7 +518,7 @@ test_mses %>%
 
 Collect estimated coefficients from optimal negative binomial models:
 ```{r}
-ceofs <- getCoefs(predictors, dist)
+coefs <- getCoefs(predictors, dist)
 ```
 
 Plot coefficient estimates from negative binomial models:
