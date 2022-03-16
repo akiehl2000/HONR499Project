@@ -37,7 +37,7 @@ summary(raw_data)
   
 Generate data frame of binned count data:
 ```{r, warning=FALSE}
-BINWIDTH <- 0.05
+BINWIDTH <- 0.5
 
 # function for binning spike train counts
 make_counts <- function(times, start, end, width){
@@ -100,6 +100,6 @@ binned_data %>%
   filter(trial == 1) %>%
   ggplot() +
   geom_col(aes(binstart, bincount)) +
-  facet_wrap(factor(neuron, levels = names(binned_df)[13:48]) ~ .) +
+  facet_wrap(factor(neuron, levels = names(binned_df)[12:47]) ~ .) +
   labs(title='First Trial Neuron Spike Counts', x='Bin Number', y='Spike Count')
 ```
