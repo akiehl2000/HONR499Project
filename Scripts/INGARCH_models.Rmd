@@ -353,6 +353,69 @@ fitOpt <- function(predictors, tuned, dist) {
 }
 ```
 
+A function for collecting estimated coefficients from saved optimal models:
+```{r}
+getCoefs <- function(predictors, dist) {
+  # predictors: a list of optimal predictor sets for each response
+  # dist: the assumed distribution for the marginal time series process
+  
+  # define empty data frame to store coefficients
+  coefs <- data.frame(resp = resp_names,
+                      beta_1 = rep(NA, 15),
+                      beta_2 = rep(NA, 15),
+                      beta_3 = rep(NA, 15),
+                      beta_4 = rep(NA, 15),
+                      beta_5 = rep(NA, 15),
+                      alpha = rep(NA, 15),
+                      CA3.1 = rep(NA, 15),
+                      CA3.2 = rep(NA, 15),
+                      CA3.3 = rep(NA, 15),
+                      CA3.4 = rep(NA, 15),
+                      CA3.5 = rep(NA, 15),
+                      CA3.6 = rep(NA, 15),
+                      CA3.7 = rep(NA, 15),
+                      CA3.8 = rep(NA, 15),
+                      CA3.9 = rep(NA, 15),
+                      CA3.10 = rep(NA, 15),
+                      CA3.11 = rep(NA, 15),
+                      CA3.12 = rep(NA, 15),
+                      CA3.13 = rep(NA, 15),
+                      CA3.14 = rep(NA, 15),
+                      CA3.15 = rep(NA, 15),
+                      CA3.16 = rep(NA, 15),
+                      CA3.17 = rep(NA, 15),
+                      CA3.18 = rep(NA, 15),
+                      CA3.19 = rep(NA, 15),
+                      CA3.20 = rep(NA, 15),
+                      CA3.21 = rep(NA, 15),
+                      trial = rep(NA, 15))
+  
+  # loop through response variables
+  for (resp in resp_names) {
+    if (dist == 'poisson') {
+      model <- readRDS(paste('../Models/INGARCH_Pois/model_', resp, sep = ''))
+    } else {
+      model <- readRDS(paste('../Models/INGARCH_NBinom/model_', resp, sep = ''))
+    }
+    
+    model_sum <- summary(model)
+    est <- model_sum$coefficients$Estimate[-c(1, nrow(model_sum$coefficients))]
+  
+    nms <- rownames(model_sum$coefficients)[which(
+      !grepl('var', rownames(model_sum$coefficients)) & 
+        !grepl('Intercept', rownames(model_sum$coefficients)) & 
+        !grepl('sigma', rownames(model_sum$coefficients)) &
+        !grepl('trial', rownames(model_sum$coefficients)))]
+    nms[which(grepl('alpha', nms))] <- 'alpha'
+    nms <- c(nms, predictors[[resp]], 'trial')
+  
+    coefs[which(coefs$resp == resp), nms] <- est
+  }
+  
+  return(coefs)
+}
+```
+
 # Poisson Models
 
 Find optimal subset of predictors and model parameters for poisson model:
@@ -387,6 +450,27 @@ model_tune_mses %>%
 Fit optimal poisson models using selected predictors and parameters:
 ```{r}
 test_mses <- fitOpt(predictors, tuned, dist)
+```
+
+Collect estimated coefficients from optimal poisson models:
+```{r}
+ceofs <- getCoefs(predictors, dist)
+```
+
+Plot coefficient estimates from poisson models:
+```{r}
+coefs %>%
+  pivot_longer(!resp, names_to = 'pred', values_to = 'est') %>%
+  ggplot() +
+  geom_tile(aes(factor(pred, levels = c('beta_1', 'beta_2', 'beta_3', 'beta_4', 
+                                        'beta_5', 'alpha', pred_names, 
+                                        'trial')),
+                factor(resp, levels = resp_names), 
+                fill = as.numeric(est))) +
+  scale_fill_continuous() +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +
+  labs(title='Poisson INGARCH Coefficient Estimates', 
+       x='Predictor', y='Response', fill='')
 ```
 
 # Negative Binomial Models
@@ -429,82 +513,26 @@ test_mses %>%
   saveRDS('../Optimize/INGARCH_NBinom/test_mses.RData')
 ```
 
-Collect fitted model coefficient estimates from one-to-many models into data 
-frame:
+Collect estimated coefficients from optimal negative binomial models:
 ```{r}
-# define empty data frame to store coefficients
-coefs <- data.frame(resp = resp_names,
-                    b.1 = rep(NA, 15),
-                    b.2 = rep(NA, 15),
-                    b.3 = rep(NA, 15),
-                    b.4 = rep(NA, 15),
-                    b.5 = rep(NA, 15),
-                    a = rep(NA, 15),
-                    CA3.1 = rep(NA, 15),
-                    CA3.2 = rep(NA, 15),
-                    CA3.3 = rep(NA, 15),
-                    CA3.4 = rep(NA, 15),
-                    CA3.5 = rep(NA, 15),
-                    CA3.6 = rep(NA, 15),
-                    CA3.7 = rep(NA, 15),
-                    CA3.8 = rep(NA, 15),
-                    CA3.9 = rep(NA, 15),
-                    CA3.10 = rep(NA, 15),
-                    CA3.11 = rep(NA, 15),
-                    CA3.12 = rep(NA, 15),
-                    CA3.13 = rep(NA, 15),
-                    CA3.14 = rep(NA, 15),
-                    CA3.15 = rep(NA, 15),
-                    CA3.16 = rep(NA, 15),
-                    CA3.17 = rep(NA, 15),
-                    CA3.18 = rep(NA, 15),
-                    CA3.19 = rep(NA, 15),
-                    CA3.20 = rep(NA, 15),
-                    CA3.21 = rep(NA, 15))
-coefs <- list()
-
-# loop through response variables
-for (resp in resp_names) {
-  dfs <- gen_df(1:5, 6, as.vector(predictors[[resp]]), resp)
-  train_df <- dfs[['train_df']]
-  remove(dfs)
-  
-  p <- tuned$p[which(tuned$resp == resp)]
-  q <- tuned$q[which(tuned$resp == resp)]
-
-  tryCatch(
-    {
-      model <- tsglm(as.ts(train_df[, 1]), xreg = as.matrix(train_df[, -1]), 
-               model = list(past_obs = 1:p, past_mean = q), 
-               link = 'log', distr = 'poisson')
-      temp <- summary(model)
-      est <- temp$coefficients$Estimate[-1]
-      coefs[[resp]] <- est
-      print(paste('Success:', resp))
-    },
-    error=function(cond) {
-      coefs[[resp]] <- NA
-      print(paste('Error:', resp))
-    }
-  )
-}
+ceofs <- getCoefs(predictors, dist)
 ```
 
-Plot coefficient estimates from MISO models:
+Plot coefficient estimates from negative binomial models:
 ```{r}
 coefs %>%
   pivot_longer(!resp, names_to = 'pred', values_to = 'est') %>%
   ggplot() +
-  geom_tile(aes(factor(pred, levels = c('beta.1', 'beta.2', 'beta.3', 'beta.4', 
-                                        'beta.5', 'a.740', pred_names)),
+  geom_tile(aes(factor(pred, levels = c('beta_1', 'beta_2', 'beta_3', 'beta_4', 
+                                        'beta_5', 'alpha', pred_names, 
+                                        'trial')),
                 factor(resp, levels = resp_names), 
                 fill = as.numeric(est))) +
   scale_fill_continuous() +
   theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +
-  labs(title='INGARCH Coefficient Estimates', 
+  labs(title='Negative Binomial INGARCH Coefficient Estimates', 
        x='Predictor', y='Response', fill='')
 ```
-
 
 
 ```{r}
