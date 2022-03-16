@@ -118,7 +118,6 @@ for (var1 in c(pred_names, resp_names)) {
     }
     
     temp <- ccf(binned_df[, var1], binned_df[, var2], plot = FALSE)
-    # norm_cc[which(norm_cc$var2 == var2), var1] <- temp$acf[ceiling(length(temp$acf / 2))]
     norm_cc[which(norm_cc$var2 == var2), var1] <- max(temp$acf)
   }
 }
@@ -129,7 +128,7 @@ for (i in 1:nrow(norm_cc)) {
 }
 ```
 
-```{r}
+```{r, message=FALSE}
 norm_cc %>%
   select(-var2) %>%
   pivot_longer(cols = c(pred_names, resp_names), 
@@ -144,4 +143,3 @@ norm_cc %>%
   labs(title = 'Normalized Cross Correlation Matrix', 
        x = 'Variable', y = 'Variable', fill = 'Correlation')
 ```
-
