@@ -121,9 +121,9 @@ cross_valid <- function(pred_list, resp_list, p, dist) {
   # dist: the assumed distribution for the marginal time series process
   
   # define empty vector to store MSE values
-  mses <- rep(NA, 8)
+  mses <- rep(NA, 2)
   
-  for (i in 1:8) {
+  for (i in 1:2) {
     # select trials for training and validation (PICK ONE)
     # blocking cross-validation method is progressive
     trials <- list((10 * (i - 1) + 1):(10 * i - 2), (10 * i - 1):(10 * i))
@@ -200,7 +200,8 @@ var_select <- function(select, start, dist) {
         # fit full model
         model <- tsglm(as.ts(train_df[, 1]), xreg = as.matrix(train_df[, -1]), 
                  model = list(past_obs = 5), 
-                 link = 'log', distr = dist)
+                 link = 'log', 
+                 distr = dist)
         
         # extract estimated coefficients from fitted model
         temp <- summary(model)
@@ -230,7 +231,7 @@ var_select <- function(select, start, dist) {
       tryCatch(
         {
           # calculate model MSE with given predictor subset
-          mses[i] <- cross_valid(preds, resp, 1, 2, dist)
+          mses[i] <- cross_valid(preds, resp, 1, dist)
         }, 
         error = function(err) {
           print(paste('Error:', err))
@@ -265,7 +266,7 @@ model_tune <- function(Pmax, predictors, start, dist) {
 
   # define empty data frame for storing tuned values
   tuned <<- data.frame(resp = resp_names, 
-                      p = rep(NA, length(resp_names)))
+                       p = rep(NA, length(resp_names)))
   model_tune_mses <<- list()
   
   # loop over response variables
@@ -286,7 +287,8 @@ model_tune <- function(Pmax, predictors, start, dist) {
     }
     
     # save optimal tuned model parameters
-    tuned_p <- as.numeric(tuning$p[which(tuning$mse == min(tuning$mse))])
+    tuned_p <- as.numeric(tuning$p[which(tuning$mse == min(tuning$mse, 
+                                                           na.rm = TRUE))])
     tuned[which(tuned$resp == resp), ] <<- c(resp, tuned_p)
     model_tune_mses[[resp]] <<- as.numeric(tuning$mse)
     
@@ -307,35 +309,40 @@ fitOpt <- function(predictors, tuned, dist) {
   test_mses <- data.frame(resp = resp_names,
                           mse = rep(NA, length(resp_names)))
   
-  for (resp in resp_names) {
+  for (resp in c('CA1.12', 'CA1.13', 'CA1.14', 'CA1.15')) {
     dfs <- gen_df(1:60, 61:80, predictors[[resp]], resp)
     train_df <- dfs[['train_df']]
     valid_df <- dfs[['valid_df']]
     valid_pred <- dfs[['valid_pred']]
     remove(dfs)
     
-    p <- tuned$p[which(tuned$resp == resp)]
+    p <- as.numeric(tuned$p[which(tuned$resp == resp)])
 
     print(paste('Fitting optimal model for ', resp, '...', sep = ''))
     
-    model <- tsglm(as.ts(train_df[, 1]),
-                   xreg = as.matrix(train_df[, -1]),
-                   model = list(past_obs = 1:p),
-                   link = 'log',
-                   distr = dist)
-    
-    if (dist == 'poisson') {
-      model %>%
-        saveRDS(paste('../Models/GLAR_Pois/model_', resp, sep = ''))
-    } else {
-      model %>%
-        saveRDS(paste('../Models/GLAR_NBinom/model_', resp, sep = ''))    
-    }
-    
-    pred <- predict(model, n.ahead = nrow(valid_df), newxreg = valid_df)
-    mse <- mean((pred[['pred']] - valid_pred[, resp])^2, na.rm = TRUE)
-    
-    test_mses$mse[which(test$resp == resp)] <- mse
+    tryCatch(
+      {
+        model <- tsglm(as.ts(train_df[, 1]),
+                       xreg = as.matrix(train_df[, -1]),
+                       model = list(past_obs = 1:p),
+                       link = 'log',
+                       distr = dist)
+        pred <- predict(model, n.ahead = nrow(valid_df), newxreg = valid_df)
+        mse <- mean((pred[['pred']] - valid_pred[, resp])^2, na.rm = TRUE)
+        
+        test_mses$mse[which(test_mses$resp == resp)] <- mse
+        
+        if (dist == 'poisson') {
+          model %>%
+            saveRDS(paste('../Models/GLAR_Pois/model_', resp, '.rds', sep = ''))
+        } else {
+          model %>%
+            saveRDS(paste('../Models/GLAR_NBinom/model_', resp, '.rds', sep = ''))    
+        }
+      }, error = function(err) {
+        print(paste('Error fitting optimized model for', resp))
+      }
+    )
   }
   
   return(test_mses)
@@ -355,7 +362,6 @@ getCoefs <- function(predictors, dist) {
                       beta_3 = rep(NA, 15),
                       beta_4 = rep(NA, 15),
                       beta_5 = rep(NA, 15),
-                      alpha = rep(NA, 15),
                       CA3.1 = rep(NA, 15),
                       CA3.2 = rep(NA, 15),
                       CA3.3 = rep(NA, 15),
@@ -382,23 +388,31 @@ getCoefs <- function(predictors, dist) {
   # loop through response variables
   for (resp in resp_names) {
     if (dist == 'poisson') {
-      model <- readRDS(paste('../Models/GLAR_Pois/model_', resp, sep = ''))
+      model <- readRDS(paste('../Models/GLAR_Pois/model_', resp, '.rds', 
+                             sep = ''))
     } else {
-      model <- readRDS(paste('../Models/GLAR_NBinom/model_', resp, sep = ''))
+      model <- readRDS(paste('../Models/GLAR_NBinom/model_', resp, '.rds', 
+                             sep = ''))
     }
     
-    model_sum <- summary(model)
-    est <- model_sum$coefficients$Estimate[-c(1, nrow(model_sum$coefficients))]
-  
-    nms <- rownames(model_sum$coefficients)[which(
-      !grepl('var', rownames(model_sum$coefficients)) & 
-        !grepl('Intercept', rownames(model_sum$coefficients)) & 
-        !grepl('sigma', rownames(model_sum$coefficients)) &
-        !grepl('trial', rownames(model_sum$coefficients)))]
-    nms[which(grepl('alpha', nms))] <- 'alpha'
-    nms <- c(nms, predictors[[resp]], 'trial')
-  
-    coefs[which(coefs$resp == resp), nms] <- est
+    tryCatch (
+      {
+        model_sum <- summary(model)$coefficients
+        est <- model_sum$Estimate[-1]
+
+        nms <- rownames(model_sum)[which(
+          !grepl('var', rownames(model_sum)) & 
+          !grepl('Intercept', rownames(model_sum)) & 
+          !grepl('sigma', rownames(model_sum)) &
+          !grepl('trial', rownames(model_sum)))]
+        nms <- c(nms, predictors[[resp]], 'trial')
+
+        coefs[which(coefs$resp == resp), nms] <- est
+      }, error = function(err) {
+        print(paste('Error collecting coefficients for', resp))
+      }
+    )
+
   }
   
   coefs %>%
@@ -418,10 +432,10 @@ dist <- 'poisson'
 start <- Sys.time()
 
 # collect optimal predictor subsets
-predictors <- var_select(10, start)
+predictors <- var_select(10, start, dist)
   
 # find optimal model parameters
-tuned <- model_tune(5, 5, predictors, start, dist)
+tuned <- model_tune(5, predictors, start, dist)
 ```
 
 Save optimized predictor subsets and parameters, and associated MSE values:
@@ -455,8 +469,7 @@ coefs %>%
   pivot_longer(!resp, names_to = 'pred', values_to = 'est') %>%
   ggplot() +
   geom_tile(aes(factor(pred, levels = c('beta_1', 'beta_2', 'beta_3', 'beta_4', 
-                                        'beta_5', 'alpha', pred_names, 
-                                        'trial')),
+                                        'beta_5', pred_names, 'trial')),
                 factor(resp, levels = resp_names), 
                 fill = as.numeric(est))) +
   scale_fill_continuous() +
@@ -476,10 +489,10 @@ dist <- 'nbinom'
 start <- Sys.time()
 
 # collect optimal predictor subsets
-predictors <- var_select(10, start)
+predictors <- var_select(10, start, dist)
   
 # find optimal model parameters
-tuned <- model_tune(5, 5, predictors, start, dist)
+tuned <- model_tune(5, predictors, start, dist)
 ```
 
 Save optimized predictor subsets and parameters, and associated MSE values:
@@ -516,7 +529,7 @@ coefs %>%
   pivot_longer(!resp, names_to = 'pred', values_to = 'est') %>%
   ggplot() +
   geom_tile(aes(factor(pred, levels = c('beta_1', 'beta_2', 'beta_3', 'beta_4', 
-                                        'beta_5', 'alpha', pred_names, 
+                                        'beta_5', pred_names, 
                                         'trial')),
                 factor(resp, levels = resp_names), 
                 fill = as.numeric(est))) +
@@ -544,12 +557,12 @@ if (dist == 'poisson') {
 
 Generate summary and MSE for quick model testing:
 ```{r}
-dist <- 'poisson'
-resp <- 'CA1.1'
+dist <- 'nbinom'
+resp <- 'CA1.2'
 p <- 5
 
 # collect data frames
-dfs <- gen_df(1:5, 6, pred_names, resp)
+dfs <- gen_df(1:5, 6, predictors[[resp]], resp)
 train_df <- dfs[['train_df']]
 valid_df <- dfs[['valid_df']]
 valid_pred <- dfs[['valid_pred']]
