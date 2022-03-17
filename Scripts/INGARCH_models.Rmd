@@ -136,9 +136,7 @@ cross_valid <- function(pred_list, resp_list, p, q, dist) {
     dfs <- gen_df(trials[[1]], trials[[2]], pred_list, resp_list)
     train_df <- dfs[['train_df']]
     valid_df <- dfs[['valid_df']]
-    # valid_df <- dfs[['valid_df']][1:100, ]
     valid_pred <- unlist(dfs[['valid_pred']])
-    # valid_pred <- dfs[['valid_pred']][1:100, ]
 
     remove(dfs)
     
@@ -202,13 +200,15 @@ var_select <- function(select, start, dist) {
     tryCatch(
       {
         # fit full model
-        model <- tsglm(as.ts(train_df[, 1]), xreg = as.matrix(train_df[, -1]), 
-                 model = list(past_obs = 1, past_mean = 2), 
-                 link = 'log', distr = dist)
+        model <- tsglm(as.ts(train_df[, 1]), 
+                       xreg = as.matrix(train_df[, -1]), 
+                       model = list(past_obs = 1, past_mean = 2), 
+                       link = 'log', 
+                       distr = dist)
         
         # extract estimated coefficients from fitted model
         temp <- summary(model)
-        est <- temp$coefficients$Estimate[-c(1:3, 25)]
+        est <- temp$coefficients$Estimate[-c(1:3, 25, 26)]
         
         # save predictors with largest effect size for forward selection
         full_model_select <<- data.frame(var = pred_names, coef = est) %>% 
@@ -270,8 +270,8 @@ model_tune <- function(Pmax, Qmax, predictors, start, dist) {
 
   # define empty data frame for storing tuned values
   tuned <<- data.frame(resp = resp_names, 
-                      p = rep(NA, length(resp_names)),
-                      q = rep(NA, length(resp_names)))
+                       p = rep(NA, length(resp_names)),
+                       q = rep(NA, length(resp_names)))
   model_tune_mses <<- list()
   
   # loop over response variables
@@ -280,8 +280,8 @@ model_tune <- function(Pmax, Qmax, predictors, start, dist) {
     
     # define empty data frame to store MSE results
     tuning <- data.frame(p = rep(1:Pmax, each = Qmax),
-                       q = rep(1:Qmax, times = Pmax),
-                       mse = rep(NA, (Pmax * Qmax)))
+                         q = rep(1:Qmax, times = Pmax),
+                         mse = rep(NA, (Pmax * Qmax)))
     
     # loop over parameter values of interest
     for (p in 1:Pmax) {
@@ -324,8 +324,8 @@ fitOpt <- function(predictors, tuned, dist) {
     valid_pred <- dfs[['valid_pred']]
     remove(dfs)
     
-    p <- tuned$p[which(tuned$resp == resp)]
-    q <- tuned$q[which(tuned$resp == resp)]
+    p <- as.numeric(tuned$p[which(tuned$resp == resp)])
+    q <- as.numeric(tuned$q[which(tuned$resp == resp)])
     
     print(paste('Fitting optimal model for ', resp, '...', sep = ''))
     
@@ -346,7 +346,7 @@ fitOpt <- function(predictors, tuned, dist) {
     pred <- predict(model, n.ahead = nrow(valid_df), newxreg = valid_df)
     mse <- mean((pred[['pred']] - valid_pred[, resp])^2, na.rm = TRUE)
     
-    test_mses$mse[which(test$resp == resp)] <- mse
+    test_mses$mse[which(test_mses$resp == resp)] <- mse
   }
   
   return(test_mses)
