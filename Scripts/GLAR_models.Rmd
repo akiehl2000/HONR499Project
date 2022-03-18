@@ -57,7 +57,7 @@ parameter defining the extent of the autoregressive component.
 ## Setup
 
 The binned data frame is read and feature names are defined:
-```{r}
+```{r setup}
 binned_df <- read.csv('../Data/binned_df.csv')
 
 resp_names <- c('CA1.1', 'CA1.2', 'CA1.3', 'CA1.4', 'CA1.5', 'CA1.6', 'CA1.7', 
@@ -70,7 +70,7 @@ pred_names <- c('CA3.1', 'CA3.2', 'CA3.3', 'CA3.4', 'CA3.5', 'CA3.6', 'CA3.7',
 ```
 
 A function for subsetting and cleaning data frames for modeling:
-```{r}
+```{r df-generator}
 gen_df <- function(train_trials, valid_trials, pred, resp) {
   # train_trails: a vector of trials to be included in the training set
   # valid_trials: a vector of trials to be included in the validation set
@@ -101,6 +101,8 @@ gen_df <- function(train_trials, valid_trials, pred, resp) {
   if (length(zeros) > 0) {
     train_df <- train_df[, -zeros]
     valid_df <- valid_df[, -zeros]
+    
+    print('Removed empty column(s)')
   }
   
   # return data frames
@@ -113,7 +115,7 @@ gen_df <- function(train_trials, valid_trials, pred, resp) {
 A function for blocked cross-validation given the response and predictor 
 variables of interest, the parameters of a model specification, and an assumed 
 distribution:
-```{r, message=FALSE, warning=FALSE, error=FALSE}
+```{r cross-valid}
 cross_valid <- function(pred_list, resp_list, p, dist) {
   # pred_list: a vector of predictor variables to be included in the data sets
   # resp_list: a vector of response variables to be included in the data sets
@@ -124,11 +126,8 @@ cross_valid <- function(pred_list, resp_list, p, dist) {
   mses <- rep(NA, 2)
   
   for (i in 1:2) {
-    # select trials for training and validation (PICK ONE)
     # blocking cross-validation method is progressive
     trials <- list((10 * (i - 1) + 1):(10 * i - 2), (10 * i - 1):(10 * i))
-    # time series split cross-validation method is inclusive
-    # trials <- list(1:(10 * i - 2), (10 * i - 1):(10 * i))
     
     # collect data frames
     dfs <- gen_df(trials[[1]], trials[[2]], pred_list, resp_list)
@@ -148,7 +147,7 @@ cross_valid <- function(pred_list, resp_list, p, dist) {
                        distr = dist)
       }, 
       error = function(err) {
-        print(paste('Model fitting error on (', p, '): ', err, 
+        print(paste('Model fitting error on ', resp_list, ' (', p, '): ', err, 
                     sep = ''))
       }
     )
@@ -162,8 +161,8 @@ cross_valid <- function(pred_list, resp_list, p, dist) {
         mses[i] <- round(mse, 4)
       }, 
       error = function(err) {
-        print(paste('Model evaluation error on (', p, '): ', err, 
-                    sep = ''))
+        print(paste('Model evaluation error on ', resp_list, ' (', p, '): ', 
+                    err, sep = ''))
       }
       
     )
@@ -177,12 +176,14 @@ cross_valid <- function(pred_list, resp_list, p, dist) {
 
 A function for performing variable selection on the GLAR model using a 
 forward selection technique based on the effect sizes from the full model. 
-```{r, message=FALSE, warning=FALSE, error=FALSE}
+```{r var-select}
 var_select <- function(select, start, dist) {
   # select: the maximum number of predictor variables to model on
   # start: the start time of the model tuning procedure
   # dist: the assumed distribution for the marginal time series process
 
+  working <- TRUE
+  
   # define empty list to store best variable subsets
   predictors <<- list()
   var_select_mses <<- list()
@@ -190,63 +191,79 @@ var_select <- function(select, start, dist) {
   for (resp in resp_names) {
     print(paste('Beginning variable selection for:', resp))
     
+    working <- TRUE
+    
     # collect training data frame
-    dfs <- gen_df(1:3, 21, pred_names, resp)
+    dfs <- gen_df(1:5, 6:10, pred_names, resp)
     train_df <- dfs[['train_df']]
     remove(dfs)
   
     tryCatch(
       {
         # fit full model
-        model <- tsglm(as.ts(train_df[, 1]), xreg = as.matrix(train_df[, -1]), 
-                 model = list(past_obs = 5), 
-                 link = 'log', 
-                 distr = dist)
+        model <- tsglm(as.ts(train_df[, 1]), 
+                       xreg = as.matrix(train_df[, -1]), 
+                       model = list(past_obs = 1:5), 
+                       link = 'log', 
+                       distr = dist)
+      }, 
+      error = function(err) {
+        working <- FALSE
         
+        print(paste('Model fitting error for', resp, 'full model:', err))
+      }
+    )
+    
+    tryCatch(
+      {
         # extract estimated coefficients from fitted model
-        temp <- summary(model)
-        est <- temp$coefficients$Estimate[-c(1:3, 25)]
+        model_sum <- summary(model)$coefficients$Estimate
         
-        # save predictors with largest effect size for forward selection
-        full_model_select <<- data.frame(var = pred_names, coef = est) %>% 
+        if (dist == 'poisson') {
+          est <- model_sum[-c(1:6, length(model_sum))]
+        } else{
+          est <- model_sum[-c(1:6, length(model_sum) - 1, length(model_sum))]
+        }
+        
+        full_model_select <- data.frame(var = pred_names, coef = est) %>%
           arrange(desc(abs(coef))) %>%
           top_n(select, coef) %>%
           select(var) %>%
           unlist()
-      },
+        
+      }, 
       error = function(err) {
-        print(paste('Error:', err))
+        working <- FALSE
+        
+        print(paste('Model evaluation error for', resp, 'full model:', err))
       }
     )
     
-    # define empty vector to store CV MSE results for forward selection
-    mses <- rep(NA, select)
-    
-    # perform forward selection with chosen variables
-    for (i in 1:length(full_model_select)) {
-      print(paste('selecting top', i, 'variables...'))
+    if (working == TRUE) {
+      # define empty vector to store CV MSE results for forward selection
+      mses <- rep(NA, select)
       
-      preds <- full_model_select[1:i]
+      # perform forward selection with chosen variables
+      for (i in 1:length(full_model_select)) {
+        print(paste('selecting top', i, 'variables...'))
+        
+        preds <- full_model_select[1:i]
+        
+        mses[i] <- cross_valid(preds, resp, 5, dist)
+      }
       
-      tryCatch(
-        {
-          # calculate model MSE with given predictor subset
-          mses[i] <- cross_valid(preds, resp, 1, dist)
-        }, 
-        error = function(err) {
-          print(paste('Error:', err))
-        }
-      )
+      # store selected best subset 
+      forward_select <- data.frame(var_inc = 1:select,
+                                   mse = mses)
+      predictors[[resp]] <<- full_model_select[1:forward_select$var_inc[which(
+        forward_select$mse == min(forward_select$mse))]]
+      var_select_mses[[resp]] <<- as.numeric(mses)
+    } else {
+      print(paste('Could not perform variable selection for', resp))
     }
     
-    # store selected best subset 
-    forward_select <- data.frame(var_inc = 1:select,
-                                 mse = mses)
-    predictors[[resp]] <<- full_model_select[1:forward_select$var_inc[which(
-      forward_select$mse == min(forward_select$mse))]]
-    var_select_mses[[resp]] <<- as.numeric(mses)
-    
-    print(paste('Completed after', (Sys.time() - start), 'minutes'))
+    print(paste('Completed after', difftime(Sys.time(), start, unit = 'mins'), 
+                'minutes'))
   }
   
   return(predictors)
@@ -257,7 +274,7 @@ var_select <- function(select, start, dist) {
 
 A function for tuning the GLAR models to acceptable parameter values given 
 an optimally selected predictor set: 
-```{r, message=FALSE, warning=FALSE, error=FALSE}
+```{r model-tune}
 model_tune <- function(Pmax, predictors, start, dist) {
   # Pmax: the maximum number of past observations to model on
   # predictors: a list of optimal predictor sets for each response
@@ -282,8 +299,13 @@ model_tune <- function(Pmax, predictors, start, dist) {
       print(paste('tuning with p=', p, '...', sep=''))
         
       # calculate model MSE with given parameters
-      tuning$mse[which(tuning$p == p)] <- cross_valid(
-        as.vector(predictors[[resp]]), resp, p, dist)
+      if (is.null(predictors[[resp]])) {
+        tuning$mse[which(tuning$p == p)] <- cross_valid(
+          pred_names, resp, p, dist)
+      } else{
+        tuning$mse[which(tuning$p == p)] <- cross_valid(
+          as.vector(predictors[[resp]]), resp, p, dist)
+      }
     }
     
     # save optimal tuned model parameters
@@ -292,7 +314,8 @@ model_tune <- function(Pmax, predictors, start, dist) {
     tuned[which(tuned$resp == resp), ] <<- c(resp, tuned_p)
     model_tune_mses[[resp]] <<- as.numeric(tuning$mse)
     
-    print(paste('Completed after', (Sys.time() - start), 'minutes'))
+    print(paste('Completed after', difftime(Sys.time(), start, unit = 'mins'), 
+                'minutes'))
   }
   
   return(tuned)
@@ -300,7 +323,7 @@ model_tune <- function(Pmax, predictors, start, dist) {
 ```
 
 A function for fitting optimal models using selected predictors and parameters:
-```{r}
+```{r fit-optimal}
 fitOpt <- function(predictors, tuned, dist) {
   # predictors: a list of optimal predictor sets for each response
   # tuned: a data frame of optimal model parameters for each response
@@ -309,17 +332,20 @@ fitOpt <- function(predictors, tuned, dist) {
   test_mses <- data.frame(resp = resp_names,
                           mse = rep(NA, length(resp_names)))
   
-  for (resp in c('CA1.12', 'CA1.13', 'CA1.14', 'CA1.15')) {
+  for (resp in resp_names) {
+    # collect data frames
     dfs <- gen_df(1:60, 61:80, predictors[[resp]], resp)
     train_df <- dfs[['train_df']]
     valid_df <- dfs[['valid_df']]
     valid_pred <- dfs[['valid_pred']]
     remove(dfs)
     
+    # collect optimized parameter value
     p <- as.numeric(tuned$p[which(tuned$resp == resp)])
 
     print(paste('Fitting optimal model for ', resp, '...', sep = ''))
     
+    # fit optimized model
     tryCatch(
       {
         model <- tsglm(as.ts(train_df[, 1]),
@@ -327,33 +353,49 @@ fitOpt <- function(predictors, tuned, dist) {
                        model = list(past_obs = 1:p),
                        link = 'log',
                        distr = dist)
+        
+        if (dist == 'poisson') {
+          model %>%
+            saveRDS(paste('../Models/GLAR_Pois/model_', resp, '.rds', 
+                          sep = ''))
+        } else {
+          model %>%
+            saveRDS(paste('../Models/GLAR_NBinom/model_', resp, '.rds', 
+                          sep = ''))    
+        }
+      }, 
+      error = function(err) {
+        print(paste('Model fitting error on optimal ', resp, ': ', err, 
+                    sep = ''))
+      }
+    )
+    
+    # calculate optimized test MSE
+    tryCatch(
+      {
         pred <- predict(model, n.ahead = nrow(valid_df), newxreg = valid_df)
         mse <- mean((pred[['pred']] - valid_pred[, resp])^2, na.rm = TRUE)
         
         test_mses$mse[which(test_mses$resp == resp)] <- mse
-        
-        if (dist == 'poisson') {
-          model %>%
-            saveRDS(paste('../Models/GLAR_Pois/model_', resp, '.rds', sep = ''))
-        } else {
-          model %>%
-            saveRDS(paste('../Models/GLAR_NBinom/model_', resp, '.rds', sep = ''))    
-        }
-      }, error = function(err) {
-        print(paste('Error fitting optimized model for', resp))
+      }, 
+      error = function(err) {
+        print(paste('Model evaluation error on optimal ', resp, ': ', err, 
+                    sep = ''))
       }
     )
   }
-  
+
   return(test_mses)
 }
 ```
 
 A function for collecting estimated coefficients from saved optimal models:
-```{r}
+```{r get-coefs}
 getCoefs <- function(predictors, dist) {
   # predictors: a list of optimal predictor sets for each response
   # dist: the assumed distribution for the marginal time series process
+  
+  working <- TRUE
   
   # define empty data frame to store coefficients
   coefs <- data.frame(resp = resp_names,
@@ -387,37 +429,55 @@ getCoefs <- function(predictors, dist) {
   
   # loop through response variables
   for (resp in resp_names) {
-    if (dist == 'poisson') {
-      model <- readRDS(paste('../Models/GLAR_Pois/model_', resp, '.rds', 
-                             sep = ''))
-    } else {
-      model <- readRDS(paste('../Models/GLAR_NBinom/model_', resp, '.rds', 
-                             sep = ''))
-    }
+    working <- TRUE
     
-    tryCatch (
+    # import trained optimal models
+    tryCatch(
       {
-        model_sum <- summary(model)$coefficients
-        est <- model_sum$Estimate[-1]
-
-        nms <- rownames(model_sum)[which(
-          !grepl('var', rownames(model_sum)) & 
-          !grepl('Intercept', rownames(model_sum)) & 
-          !grepl('sigma', rownames(model_sum)) &
-          !grepl('trial', rownames(model_sum)))]
-        nms <- c(nms, predictors[[resp]], 'trial')
-
-        coefs[which(coefs$resp == resp), nms] <- est
-      }, error = function(err) {
-        print(paste('Error collecting coefficients for', resp))
+        if (dist == 'poisson') {
+          model <- readRDS(paste('../Models/GLAR_Pois/model_', resp, '.rds',
+                                 sep = ''))
+        } else {
+          model <- readRDS(paste('../Models/GLAR_NBinom/model_', resp, 
+                                 '.rds', sep = ''))
+        }
+      }, 
+      error = function(err) {
+        print(paste('Could not import trained model for', resp))
       }
     )
-
+    
+    # collect model coefficient estimates
+    if (working == TRUE & !is.null(predictors[[resp]])) {
+      model_sum <- summary(model)
+      rowNms <- rownames(model_sum$coefficients)
+      model_sum <- model_sum$coefficients$Estimate
+      
+      if (dist == 'poisson') {
+        est <- model_sum[-1]
+      } else {
+        est <- model_sum[-c(1, length(model_sum))]
+      }
+      
+      nms <- rowNms[which(
+        !grepl('var', rowNms) & 
+          !grepl('Intercept', rowNms) & 
+          !grepl('sigma', rowNms) &
+          !grepl('trial', rowNms))]
+      nms <- c(nms, predictors[[resp]], 'trial')
+      
+      coefs[which(coefs$resp == resp), nms] <- est
+    }
   }
   
-  coefs %>%
-    saveRDS('../Optimize/GLAR_Pois/coefs.RData')
-  
+  if (dist == 'poisson') {
+    coefs %>%
+      saveRDS('../Optimize/GLAR_Pois/coefs.RData')
+  } else {
+    coefs %>%
+      saveRDS('../Optimize/GLAR_NBinom/coefs.RData')
+  }
+
   return(coefs)
 }
 ```
@@ -425,21 +485,21 @@ getCoefs <- function(predictors, dist) {
 # Poisson Models
 
 Find optimal subset of predictors and model parameters for poisson model:
-```{r, message=FALSE, warning=FALSE, error=FALSE}
+```{r tune-poisson}
 dist <- 'poisson'
 
 # execute variable selection and model tuning
 start <- Sys.time()
 
 # collect optimal predictor subsets
-predictors <- var_select(10, start, dist)
+predictors <- var_select(5, start, dist)
   
 # find optimal model parameters
 tuned <- model_tune(5, predictors, start, dist)
 ```
 
 Save optimized predictor subsets and parameters, and associated MSE values:
-```{r}
+```{r results-poisson}
 predictors %>%
   saveRDS('../Optimize/GLAR_Pois/predictors.RData')
 
@@ -454,17 +514,22 @@ model_tune_mses %>%
 ```
 
 Fit optimal poisson models using selected predictors and parameters:
-```{r}
+```{r fit-poisson}
+start <- Sys.time()
+
 test_mses <- fitOpt(predictors, tuned, dist)
+
+test_mses %>%
+  saveRDS('../Optimize/GLAR_Pois/test_mses.RData')
+
+print(paste('Completed after', 
+            difftime(Sys.time(), start, unit = 'mins'), 'minutes'))
 ```
 
-Collect estimated coefficients from optimal poisson models:
-```{r}
+Collect and plot estimated coefficients from optimal poisson models:
+```{r plot-poisson}
 coefs <- getCoefs(predictors, dist)
-```
 
-Plot coefficient estimates from poisson models:
-```{r}
 coefs %>%
   pivot_longer(!resp, names_to = 'pred', values_to = 'est') %>%
   ggplot() +
@@ -478,25 +543,34 @@ coefs %>%
        x='Predictor', y='Response', fill='')
 ```
 
+```{r}
+remove(predictors)
+remove(var_select_mses)
+remove(tuned)
+remove(model_tune_mses)
+remove(coefs)
+remove(test_mses)
+```
+
 # Negative Binomial Models
 
 Find optimal subset of predictors and model parameters for negative binomial 
 model:
-```{r, message=FALSE, warning=FALSE, error=FALSE}
+```{r tune-nbinom}
 dist <- 'nbinom'
 
 # execute variable selection and model tuning
 start <- Sys.time()
 
 # collect optimal predictor subsets
-predictors <- var_select(10, start, dist)
+predictors <- var_select(5, start, dist)
   
 # find optimal model parameters
 tuned <- model_tune(5, predictors, start, dist)
 ```
 
 Save optimized predictor subsets and parameters, and associated MSE values:
-```{r}
+```{r results-nbinom}
 predictors %>%
   saveRDS('../Optimize/GLAR_NBinom/predictors.RData')
 
@@ -511,32 +585,42 @@ model_tune_mses %>%
 ```
 
 Fit optimal negative binomial models using selected predictors and parameters:
-```{r}
+```{r fit-nbinom}
+start <- Sys.time()
+
 test_mses <- fitOpt(predictors, tuned, dist)
 
 test_mses %>%
   saveRDS('../Optimize/GLAR_NBinom/test_mses.RData')
+
+print(paste('Completed after', 
+            difftime(Sys.time(), start, unit = 'mins'), 'minutes'))
 ```
 
-Collect estimated coefficients from optimal negative binomial models:
-```{r}
+Collect and plot estimated coefficients from optimal negative binomial models:
+```{r plot-nbinom}
 coefs <- getCoefs(predictors, dist)
-```
 
-Plot coefficient estimates from negative binomial models:
-```{r}
 coefs %>%
   pivot_longer(!resp, names_to = 'pred', values_to = 'est') %>%
   ggplot() +
   geom_tile(aes(factor(pred, levels = c('beta_1', 'beta_2', 'beta_3', 'beta_4', 
-                                        'beta_5', pred_names, 
-                                        'trial')),
+                                        'beta_5', pred_names, 'trial')),
                 factor(resp, levels = resp_names), 
                 fill = as.numeric(est))) +
   scale_fill_continuous() +
   theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +
   labs(title='Negative Binomial GLAR Coefficient Estimates', 
        x='Predictor', y='Response', fill='')
+```
+
+```{r}
+remove(predictors)
+remove(var_select_mses)
+remove(tuned)
+remove(model_tune_mses)
+remove(coefs)
+remove(test_mses)
 ```
 
 # Testing Area
