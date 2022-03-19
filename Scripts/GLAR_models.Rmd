@@ -38,8 +38,8 @@ $$
 \{Y_t &: t \in \mathbb{N}\} \\
 \boldsymbol{X_t} &= (X_{t, 1}, ..., X_{t, r})^{T} \\
 F_{t} &= \{Y_{t}, \lambda_{t}, \boldsymbol{X_{t+1}} : t \in \mathbb{N}\} \\
-Y_{t} | F_{t-1} &\sim NegBinom(\lambda_t) \\
-\nu_{t} &= log(\lambda_{t}, \phi_{t}) \\
+Y_{t} | F_{t-1} &\sim NegBinom(\lambda_t, \phi_{t}) \\
+\nu_{t} &= log(\lambda_{t}) \\
 \nu_{t} &= \beta_{0} + \sum_{j=1}^p \beta_{j} log(Y_{t-j} + 1) + 
 \boldsymbol{\eta^{T}} \boldsymbol{X_t} \\
 P(Y_{t} = y |F_{t-1}) &= \frac{\Gamma (\phi + y)}{\Gamma (y + 1) \Gamma (\phi)} 
