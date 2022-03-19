@@ -639,30 +639,32 @@ remove(test_mses)
 
 # Testing Area
 
-Generate model diagnostic plots for selected model:
+Generate diagnostic plots, summary, and MSE for quick model testing:
 ```{r}
 dist <- 'poisson'
 resp <- 'CA1.1'
 
 if (dist == 'poisson') {
-  readRDS(paste('../Models/INGARCH_Pois/model_', resp, sep = '')) %>% 
+  readRDS(paste('../Models/INGARCH_Pois/model_', resp, '.rds', sep = '')) %>% 
     plot()
 } else {
-  readRDS(paste('../Models/INGARCH_NBinom/model_', resp, sep = '')) %>% 
+  readRDS(paste('../Models/INGARCH_NBinom/model_', resp, '.rds', sep = '')) %>% 
     plot()
 }
-```
 
-Generate summary and MSE for quick model testing:
-```{r}
-dist <- 'nbinom'
-resp <- 'CA1.1'
+if (dist == 'poisson') {
+  predictors <- readRDS('../Optimize/INGARCH_Pois/predictors.RData')
+  tuned <- readRDS('../Optimize/INGARCH_Pois/tuned.RData')
+} else {
+  predictors <- readRDS('../Optimize/INGARCH_NBinom/predictors.RData')
+  tuned <- readRDS('../Optimize/INGARCH_NBinom/tuned.RData')
+}
 
-p <- 5
-q <- 5
+p <- as.numeric(tuned$p[which(tuned$resp == resp)])
+q <- as.numeric(tuned$q[which(tuned$resp == resp)])
 
 # collect data frames
-dfs <- gen_df(1:5, 6, pred_names, resp)
+dfs <- gen_df(1:60, 61:80, predictors[[resp]], resp)
 train_df <- dfs[['train_df']]
 valid_df <- dfs[['valid_df']]
 valid_pred <- dfs[['valid_pred']]

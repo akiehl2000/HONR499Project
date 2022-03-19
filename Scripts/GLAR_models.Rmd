@@ -625,34 +625,37 @@ remove(test_mses)
 
 # Testing Area
 
-Generate model diagnostic plots for selected model:
+Generate diagnostic plots, summary, and MSE for quick model testing:
 ```{r}
 dist <- 'poisson'
 resp <- 'CA1.1'
 
 if (dist == 'poisson') {
-  readRDS(paste('../Models/GLAR_Pois/model_', resp, sep = '')) %>% 
+  readRDS(paste('../Models/GLAR_Pois/model_', resp, '.rds', sep = '')) %>% 
     plot()
 } else {
-  readRDS(paste('../Models/GLAR_NBinom/model_', resp, sep = '')) %>% 
+  readRDS(paste('../Models/GLAR_NBinom/model_', resp, '.rds', sep = '')) %>% 
     plot()
 }
-```
 
-Generate summary and MSE for quick model testing:
-```{r}
-dist <- 'nbinom'
-resp <- 'CA1.2'
-p <- 5
+if (dist == 'poisson') {
+  predictors <- readRDS('../Optimize/GLAR_Pois/predictors.RData')
+  tuned <- readRDS('../Optimize/GLAR_Pois/tuned.RData')
+} else {
+  predictors <- readRDS('../Optimize/GLAR_NBinom/predictors.RData')
+  tuned <- readRDS('../Optimize/GLAR_NBinom/tuned.RData')
+}
+
+p <- as.numeric(tuned$p[which(tuned$resp == resp)])
 
 # collect data frames
-dfs <- gen_df(1:5, 6, predictors[[resp]], resp)
+dfs <- gen_df(1:60, 61:80, predictors[[resp]], resp)
 train_df <- dfs[['train_df']]
 valid_df <- dfs[['valid_df']]
 valid_pred <- dfs[['valid_pred']]
 remove(dfs)
 
-# fit GLAR model
+# fit INGARCH model
 test_model <- tsglm(as.ts(train_df[, 1]), 
                xreg = as.matrix(train_df[, -1]), 
                model = list(past_obs = 1:p), 
