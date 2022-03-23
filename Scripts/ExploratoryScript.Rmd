@@ -64,10 +64,13 @@ trial_data <- testing_df %>%
 # binned count data frame
 binned_data <- testing_df %>% 
   group_by(region, neuron_number, trial) %>% 
-  group_modify(~ { data_frame(bincount = make_counts(.x$spiketime, .x$trialstart[1], .x$completiontime[nrow(.x)], BINWIDTH),
-                              binnumb = 1:length(bincount), 
-                              binstart = (binnumb-1) * BINWIDTH + .x$trialstart[1],
-                              binend = (binnumb) * BINWIDTH + .x$trialstart[1])}) %>%
+  group_modify(~ {data_frame(bincount = make_counts(.x$spiketime, 
+                                                    .x$trialstart[1], 
+                                                    .x$completiontime[nrow(.x)], 
+                                                    BINWIDTH),
+                             binnumb = 1:length(bincount), 
+                             binstart = (binnumb-1) * BINWIDTH + .x$trialstart[1],
+                             binend = (binnumb) * BINWIDTH + .x$trialstart[1])}) %>%
   left_join(trial_data, by=c("region", "neuron_number", "trial"))
 
 # pivot wider to make neurons predictors
@@ -76,8 +79,15 @@ binned_df  <- binned_data %>%
   ungroup() %>%
   select(-c(region, neuron_number, wire, cell, outcome)) %>%
   pivot_wider(names_from = neuron, values_from = bincount)
-# temporarily convert NA values to 0
-binned_df[is.na(binned_df)] <- 0
+
+# remove trials with missing data
+neurons <- binned_data %>%
+  mutate(neuron = paste(region, neuron_number, sep = '.')) %>%
+  ungroup() %>%
+  select(neuron) %>%
+  unique() %>%
+  unlist()
+binned_df <- binned_df[complete.cases((binned_df %>% select(all_of(neurons)))), ]
 
 # remove unnecessary data
 remove(testing_df)
@@ -97,9 +107,49 @@ summary(binned_df)
 binned_data %>%
   mutate(neuron = paste(region, neuron_number, sep = '.')) %>%
   ungroup() %>%
-  filter(trial == 1) %>%
+  filter(trial == 3) %>%
   ggplot() +
   geom_col(aes(binstart, bincount)) +
-  facet_wrap(factor(neuron, levels = names(binned_df)[12:47]) ~ .) +
-  labs(title='First Trial Neuron Spike Counts', x='Bin Number', y='Spike Count')
+  facet_wrap(factor(neuron, levels = names(binned_df)[13:48]) ~ .) +
+  labs(title='Third Trial Neuron Spike Counts', x='Bin Number', y='Spike Count')
+```
+
+```{r}
+norm_cc <- matrix(NA, nrow = length(c(pred_names, resp_names)), 
+                  ncol = length(c(pred_names, resp_names))) %>% 
+  as.data.frame() %>%
+  mutate(var2 = c(pred_names, resp_names))
+names(norm_cc) <- c(pred_names, resp_names, 'var2')
+                     
+for (var1 in c(pred_names, resp_names)) {
+  for (var2 in c(pred_names, resp_names)) {
+    if (var1 == var2) {
+      break
+    }
+    
+    temp <- ccf(binned_df[, var1], binned_df[, var2], plot = FALSE)
+    norm_cc[which(norm_cc$var2 == var2), var1] <- max(temp$acf)
+  }
+}
+
+var2_vec <- c()
+for (i in 1:nrow(norm_cc)) {
+  var2_vec <- c(var2_vec, rep(norm_cc$var2[i], (37 - i - 1)))
+}
+```
+
+```{r, message=FALSE}
+norm_cc %>%
+  select(-var2) %>%
+  pivot_longer(cols = c(pred_names, resp_names), 
+               names_to = 'var1', values_to = 'corr') %>%
+  na.omit(corr) %>%
+  mutate(var2 = var2_vec) %>%
+  ggplot() +
+  geom_tile(aes(factor(var1, levels = c(pred_names, resp_names)), 
+                factor(var2, levels = c(pred_names, resp_names)), 
+                fill = corr)) +
+  theme(axis.text.x = element_text(angle = 45, vjust = .65)) +
+  labs(title = 'Normalized Cross Correlation Matrix', 
+       x = 'Variable', y = 'Variable', fill = 'Correlation')
 ```
