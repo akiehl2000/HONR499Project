@@ -64,10 +64,13 @@ trial_data <- testing_df %>%
 # binned count data frame
 binned_data <- testing_df %>% 
   group_by(region, neuron_number, trial) %>% 
-  group_modify(~ { data_frame(bincount = make_counts(.x$spiketime, .x$trialstart[1], .x$completiontime[nrow(.x)], BINWIDTH),
-                              binnumb = 1:length(bincount), 
-                              binstart = (binnumb-1) * BINWIDTH + .x$trialstart[1],
-                              binend = (binnumb) * BINWIDTH + .x$trialstart[1])}) %>%
+  group_modify(~ {data_frame(bincount = make_counts(.x$spiketime, 
+                                                    .x$trialstart[1], 
+                                                    .x$completiontime[nrow(.x)], 
+                                                    BINWIDTH),
+                             binnumb = 1:length(bincount), 
+                             binstart = (binnumb-1) * BINWIDTH + .x$trialstart[1],
+                             binend = (binnumb) * BINWIDTH + .x$trialstart[1])}) %>%
   left_join(trial_data, by=c("region", "neuron_number", "trial"))
 
 # pivot wider to make neurons predictors
@@ -76,8 +79,15 @@ binned_df  <- binned_data %>%
   ungroup() %>%
   select(-c(region, neuron_number, wire, cell, outcome)) %>%
   pivot_wider(names_from = neuron, values_from = bincount)
-# temporarily convert NA values to 0
-binned_df[is.na(binned_df)] <- 0
+
+# remove trials with missing data
+neurons <- binned_data %>%
+  mutate(neuron = paste(region, neuron_number, sep = '.')) %>%
+  ungroup() %>%
+  select(neuron) %>%
+  unique() %>%
+  unlist()
+binned_df <- binned_df[complete.cases((binned_df %>% select(all_of(neurons)))), ]
 
 # remove unnecessary data
 remove(testing_df)
@@ -97,11 +107,11 @@ summary(binned_df)
 binned_data %>%
   mutate(neuron = paste(region, neuron_number, sep = '.')) %>%
   ungroup() %>%
-  filter(trial == 1) %>%
+  filter(trial == 3) %>%
   ggplot() +
   geom_col(aes(binstart, bincount)) +
   facet_wrap(factor(neuron, levels = names(binned_df)[13:48]) ~ .) +
-  labs(title='First Trial Neuron Spike Counts', x='Bin Number', y='Spike Count')
+  labs(title='Third Trial Neuron Spike Counts', x='Bin Number', y='Spike Count')
 ```
 
 ```{r}
