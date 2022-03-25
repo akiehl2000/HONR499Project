@@ -336,7 +336,7 @@ fitOpt <- function(predictors, tuned, dist) {
   
   for (resp in resp_names) {
     # collect data frames
-    dfs <- gen_df(1:60, 61:80, predictors[[resp]], resp)
+    dfs <- gen_df(trls[1:40], trls[41:46], predictors[[resp]], resp)
     train_df <- dfs[['train_df']]
     valid_df <- dfs[['valid_df']]
     valid_pred <- dfs[['valid_pred']]
