@@ -67,6 +67,8 @@ pred_names <- c('CA3.1', 'CA3.2', 'CA3.3', 'CA3.4', 'CA3.5', 'CA3.6', 'CA3.7',
                 'CA3.8', 'CA3.9', 'CA3.10', 'CA3.11', 'CA3.12', 'CA3.13', 
                 'CA3.14', 'CA3.15', 'CA3.16', 'CA3.17', 'CA3.18', 'CA3.19', 
                 'CA3.20', 'CA3.21')
+
+trls <- unique(binned_df$trial)
 ```
 
 A function for subsetting and cleaning data frames for modeling:
@@ -123,14 +125,14 @@ cross_valid <- function(pred_list, resp_list, p, dist) {
   # dist: the assumed distribution for the marginal time series process
   
   # define empty vector to store MSE values
-  mses <- rep(NA, 2)
+  mses <- rep(NA, 4)
   
-  for (i in 1:2) {
+  for (i in 1:4) {
     # blocking cross-validation method is progressive
     trials <- list((10 * (i - 1) + 1):(10 * i - 2), (10 * i - 1):(10 * i))
     
     # collect data frames
-    dfs <- gen_df(trials[[1]], trials[[2]], pred_list, resp_list)
+    dfs <- gen_df(trls[trials[[1]]], trls[trials[[2]]], pred_list, resp_list)
     train_df <- dfs[['train_df']]
     valid_df <- dfs[['valid_df']]
     valid_pred <- unlist(dfs[['valid_pred']])
@@ -194,7 +196,7 @@ var_select <- function(select, start, dist) {
     working <- TRUE
     
     # collect training data frame
-    dfs <- gen_df(1:5, 6:10, pred_names, resp)
+    dfs <- gen_df(trls[1:5], trls[6:10], pred_names, resp)
     train_df <- dfs[['train_df']]
     remove(dfs)
   
@@ -334,7 +336,7 @@ fitOpt <- function(predictors, tuned, dist) {
   
   for (resp in resp_names) {
     # collect data frames
-    dfs <- gen_df(1:60, 61:80, predictors[[resp]], resp)
+    dfs <- gen_df(trls[1:40], trls[41:46], predictors[[resp]], resp)
     train_df <- dfs[['train_df']]
     valid_df <- dfs[['valid_df']]
     valid_pred <- dfs[['valid_pred']]
@@ -466,7 +468,7 @@ getCoefs <- function(predictors, dist) {
           !grepl('trial', rowNms))]
       nms <- c(nms, predictors[[resp]], 'trial')
       
-      coefs[which(coefs$resp == resp), nms] <- est
+      coefs[which(coefs$resp == resp), nms] <- abs(est)
     }
   }
   
