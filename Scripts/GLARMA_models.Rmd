@@ -60,7 +60,7 @@ parameter defining the moving average component.
 ## Setup
 
 The binned data frame is read and feature names are defined:
-```{r setup}
+```{r var-names}
 binned_df <- read.csv('../Data/binned_df.csv')
 
 resp_names <- c('CA1.1', 'CA1.2', 'CA1.3', 'CA1.4', 'CA1.5', 'CA1.6', 'CA1.7', 
@@ -129,9 +129,9 @@ cross_valid <- function(pred_list, resp, p, q, dist) {
   # dist: the assumed distribution for the marginal time series process
   
   # define empty vector to store MSE values
-  mses <- rep(NA, 2)
+  aics <- rep(NA, 4)
   
-  for (i in 1:2) {
+  for (i in 1:4) {
     # blocking cross-validation method is progressive
     trials <- list((10 * (i - 1) + 1):(10 * i - 2), (10 * i - 1):(10 * i))
     
@@ -152,28 +152,25 @@ cross_valid <- function(pred_list, resp, p, q, dist) {
                         thetaLags = q)
       }, 
       error = function(err) {
-        print(paste('Model fitting error on ', resp_list, 
+        print(paste('Model fitting error on ', resp, 
                     ' (', p, ', ', q, '): ', err, sep = ''))
       }
     )
     
     tryCatch(
       {
-        # calculate MSE from predicted values
-        pred <- predict(model, n.ahead = nrow(valid_df), newxreg = valid_df)
-        mse <- mean((pred[['pred']] - valid_pred)^2, na.rm = TRUE)
-        
-        mses[i] <- round(mse, 4)
+        # extract AIC
+        aics[i] <- round(model$aic, 4)
       }, 
       error = function(err) {
-        print(paste('Model evaluation error on ', resp_list, 
+        print(paste('Model evaluation error on ', resp, 
                     ' (', p, ', ', q, '): ', err, sep = ''))
       }
       
     )
   }
   
-  return(mean(mses, na.rm = TRUE))
+  return(mean(aics, na.rm = TRUE))
 }
 ```
 
@@ -191,7 +188,7 @@ var_select <- function(select, start, dist) {
   
   # define empty list to store best variable subsets
   predictors <<- list()
-  var_select_mses <<- list()
+  var_select_aics <<- list()
   
   for (resp in resp_names) {
     print(paste('Beginning variable selection for:', resp))
@@ -209,7 +206,7 @@ var_select <- function(select, start, dist) {
         model <- glarma(train_df[, 1],
                         as.matrix(train_df[, -1]), 
                         phiLags = 1:5,
-                        thetaLags = 5)
+                        thetaLags = 6)
       }, 
       error = function(err) {
         working <- FALSE
@@ -221,12 +218,12 @@ var_select <- function(select, start, dist) {
     tryCatch(
       {
         # extract estimated coefficients from fitted model
-        model_sum <- summary(model)$coefficients$Estimate
+        model_sum <- summary(model)$coefficients1$Estimate
         
         if (dist == 'poisson') {
-          est <- model_sum[-c(1:7, length(model_sum))]
+          est <- model_sum[-length(model_sum)]
         } else{
-          est <- model_sum[-c(1:7, length(model_sum) - 1, length(model_sum))]
+          est <- model_sum[-c(1:6, length(model_sum) - 1, length(model_sum))]
         }
         
         full_model_select <- data.frame(var = pred_names, coef = est) %>%
@@ -244,8 +241,8 @@ var_select <- function(select, start, dist) {
     )
     
     if (working == TRUE) {
-      # define empty vector to store CV MSE results for forward selection
-      mses <- rep(NA, select)
+      # define empty vector to store CV AIC results for forward selection
+      aics <- rep(NA, select)
       
       # perform forward selection with chosen variables
       for (i in 1:length(full_model_select)) {
@@ -253,15 +250,15 @@ var_select <- function(select, start, dist) {
         
         preds <- full_model_select[1:i]
         
-        mses[i] <- cross_valid(preds, resp, 5, 5, dist)
+        aics[i] <- cross_valid(preds, resp, 5, 6, dist)
       }
       
       # store selected best subset 
       forward_select <- data.frame(var_inc = 1:select,
-                                   mse = mses)
+                                   aic = aics)
       predictors[[resp]] <<- full_model_select[1:forward_select$var_inc[which(
-        forward_select$mse == min(forward_select$mse))]]
-      var_select_mses[[resp]] <<- as.numeric(mses)
+        forward_select$aic == min(forward_select$aic))]]
+      var_select_aics[[resp]] <<- as.numeric(aics)
     } else {
       print(paste('Could not perform variable selection for', resp))
     }
@@ -299,31 +296,35 @@ model_tune <- function(Pmax, Qmax, predictors, start, dist) {
     # define empty data frame to store MSE results
     tuning <- data.frame(p = rep(1:Pmax, each = Qmax),
                          q = rep(1:Qmax, times = Pmax),
-                         mse = rep(NA, (Pmax * Qmax)))
+                         aic = rep(NA, (Pmax * Qmax)))
     
     # loop over parameter values of interest
     for (p in 1:Pmax) {
       for (q in 1:Qmax) {
         print(paste('tuning with p=', p, ' & q=', q, '...', sep=''))
         
-        # calculate model MSE with given parameters
-        if (is.null(predictors[[resp]])) {
-          tuning$mse[which(tuning$p == p & tuning$q == q)] <- cross_valid(
-            pred_names, resp, p, q, dist)
-        } else{
-          tuning$mse[which(tuning$p == p & tuning$q == q)] <- cross_valid(
-            as.vector(predictors[[resp]]), resp, p, q, dist)
-        }
+        if (q > p) {
+          # calculate model MSE with given parameters
+          if (is.null(predictors[[resp]])) {
+            tuning$aic[which(tuning$p == p & tuning$q == q)] <- cross_valid(
+              pred_names, resp, p, q, dist)
+          } else{
+            tuning$aic[which(tuning$p == p & tuning$q == q)] <- cross_valid(
+              as.vector(predictors[[resp]]), resp, p, q, dist)
+          }
+        } 
       }
     }
     
     # save optimal tuned model parameters
-    tuned_p <- as.numeric(tuning$p[which(tuning$mse == min(tuning$mse, 
+    tuning <- tuning %>%
+      filter(!is.na(aic))
+    tuned_p <- as.numeric(tuning$p[which(tuning$aic == min(tuning$aic, 
                                                            na.rm = TRUE))])
-    tuned_q <- as.numeric(tuning$q[which(tuning$mse == min(tuning$mse, 
+    tuned_q <- as.numeric(tuning$q[which(tuning$aic == min(tuning$aic, 
                                                            na.rm = TRUE))])
     tuned[which(tuned$resp == resp), ] <<- c(resp, tuned_p, tuned_q)
-    model_tune_mses[[resp]] <<- as.numeric(tuning$mse)
+    model_tune_aics[[resp]] <<- as.numeric(tuning$aic)
     
     print(paste('Completed after', difftime(Sys.time(), start, unit = 'mins'), 
                 'minutes'))
@@ -384,9 +385,27 @@ fitOpt <- function(predictors, tuned, dist) {
     # calculate optimized test MSE
     tryCatch(
       {
-        pred <- predict(model, n.ahead = nrow(valid_df), newxreg = valid_df)
-        mse <- mean((pred[['pred']] - valid_pred[, resp])^2, na.rm = TRUE)
+        R <- 100
         
+        y_pred <- rep(NA, nrow(valid_df))
+        
+        model <- glarma(train_df[, 1], as.matrix(train_df[, -1]), phiLags = 1:p, thetaLags = q)
+        
+        for (t in 1:nrow(valid_df)) {
+          newYs <- rep(NA, R)
+          for (r in 1:R) {
+            newYs[r] <- forecast(model, n.ahead = 1, newdata = as.matrix(valid_df[t, ]))$Y
+          }
+          y_pred[t] <- mean(newYs)
+          
+          print(paste('Forecasting complete for time ', t, '...', sep = ''))
+          
+          model <- glarma(c(train_df[, 1], valid_pred[t, 1]), 
+                          as.matrix(rbind(train_df[, -1], valid_df[t, ])), 
+                          phiLags = 1:5, thetaLags = 6)
+        }
+        
+        mse <- mean((y_pred - valid_pred[, 1])^2, na.rm = TRUE)
         test_mses$mse[which(test_mses$resp == resp)] <- mse
       }, 
       error = function(err) {
@@ -508,7 +527,7 @@ start <- Sys.time()
 predictors <- var_select(5, start, dist)
   
 # find optimal model parameters
-tuned <- model_tune(5, 5, predictors, start, dist)
+tuned <- model_tune(5, 6, predictors, start, dist)
 ```
 
 Save optimized predictor subsets and parameters, and associated MSE values:
@@ -519,11 +538,11 @@ predictors %>%
 tuned %>%
   saveRDS('../Optimize/GLARMA_Pois/tuned.RData')
 
-var_select_mses %>%
-  saveRDS('../Optimize/GLARMA_Pois/varSelectMSE.RData')
+var_select_aics %>%
+  saveRDS('../Optimize/GLARMA_Pois/varSelectAIC.RData')
 
-model_tune_mses %>%
-  saveRDS('../Optimize/GLARMA_Pois/modelTuneMSE.RData')
+model_tune_aics %>%
+  saveRDS('../Optimize/GLARMA_Pois/modelTuneAIC.RData')
 ```
 
 Fit optimal poisson models using selected predictors and parameters:
@@ -591,11 +610,11 @@ predictors %>%
 tuned %>%
   saveRDS('../Optimize/GLARMA_NBinom/tuned.RData')
 
-var_select_mses %>%
-  saveRDS('../Optimize/GLARMA_NBinom/varSelectMSE.RData')
+var_select_aics %>%
+  saveRDS('../Optimize/GLARMA_NBinom/varSelectAIC.RData')
 
-model_tune_mses %>%
-  saveRDS('../Optimize/GLARMA_NBinom/modelTuneMSE.RData')
+model_tune_aics %>%
+  saveRDS('../Optimize/GLARMA_NBinom/modelTuneAIC.RData')
 ```
 
 Fit optimal negative binomial models using selected predictors and parameters:
@@ -665,7 +684,7 @@ p <- as.numeric(tuned$p[which(tuned$resp == resp)])
 q <- as.numeric(tuned$q[which(tuned$resp == resp)])
 
 # collect data frames
-dfs <- gen_df(1:60, 61:80, predictors[[resp]], resp)
+dfs <- gen_df(trls[1:40], trls[41:46], pred_names, resp)
 train_df <- dfs[['train_df']]
 valid_df <- dfs[['valid_df']]
 valid_pred <- dfs[['valid_pred']]
@@ -675,7 +694,10 @@ remove(dfs)
 test_model <- glarma(train_df[, 1],
                      as.matrix(train_df[, -1]),
                      phiLags = 1:p, 
-                     thetaLags = q)
+                     thetaLags = q,
+                     type = 'Poi',
+                     method = 'FS',
+                     residuals = 'Pearson')
 
 summary(test_model)
 
@@ -683,3 +705,26 @@ summary(test_model)
 pred <- predict(test_model, n.ahead = nrow(valid_df), newxreg = valid_df)
 mean((pred[['pred']] - valid_pred[, resp])^2, na.rm = TRUE)
 ```
+
+```{r}
+R <- 100
+
+y_pred <- rep(NA, 100)
+
+model <- glarma(train_df[, 1], as.matrix(train_df[, -1]), phiLags = 1:5, thetaLags = 6)
+
+for (t in 1:100) {
+  # newYs <- rep(NA, R)
+  # for (r in 1:R) {
+  #   newYs[r] <- forecast(model, n.ahead = 1, newdata = as.matrix(valid_df[t, ]))$Y
+  # }
+  y_pred[t] <- forecast(model, n.ahead = 1, newdata = as.matrix(valid_df[t, ]))$Y
+  print(paste('Forecasting complete for time ', t, '...', sep = ''))
+  model <- glarma(c(train_df[, 1], valid_pred[t, 1]), 
+                  as.matrix(rbind(train_df[, -1], valid_df[t, ])), 
+                  phiLags = 1:5, thetaLags = 6)
+}
+
+mean((y_pred - valid_pred[, 1])^2)
+```
+
