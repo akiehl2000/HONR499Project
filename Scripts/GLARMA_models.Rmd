@@ -1,5 +1,5 @@
 ---
-title: "GLAR Modeling"
+title: "GLARMA Modeling"
 author: "Adam Kiehl"
 date: "3/15/2022"
 output: pdf_document
@@ -8,7 +8,7 @@ output: pdf_document
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
 library(tidyverse)
-library(tscount) # GLAR model implementation
+library(glarma) # GLARMA model implementation
 
 # set seed for reproducibility
 set.seed(499)
@@ -16,9 +16,9 @@ set.seed(499)
 
 ## Introduction
 
-The univariate log-linear GLAR(p) models fit here using the `tsglm` function in 
-the `tscount` package are specified according to Davis, et al. and Liboschik, 
-et al. like:
+The univariate log-linear GLARMA(p, q) models fit here using the `tsglm` 
+function in the `tscount` package are specified according to Davis, et al. and 
+Liboschik, et al. like:
 $$
 \begin{aligned}
 \{Y_t &: t \in \mathbb{N}\} \\
@@ -26,8 +26,9 @@ $$
 F_{t} &= \{Y_{t}, \lambda_{t}, \boldsymbol{X_{t+1}} : t \in \mathbb{N}\} \\
 Y_{t} | F_{t-1} &\sim Poisson(\lambda_t) \\
 \nu_{t} &= log(\lambda_{t}) \\
-\nu_{t} &= \beta_{0} + \sum_{j=1}^p \beta_{j} log(Y_{t-j} + 1) + 
-\boldsymbol{\eta^{T}} \boldsymbol{X_t} \\
+\nu_{t} &= \sum_{j=1}^p \phi_{j} (log(Y_{t-j}) - \boldsymbol{\eta}^{T} 
+\boldsymbol{X}_{t-j}) + \sum_{k=1}^q \psi_k (log(Y_{t-k}) - \nu_{t-k}) + 
+\boldsymbol{\eta}^{T} \boldsymbol{X}_t\\
 P(Y_{t} = y |F_{t-1}) &= \frac{\lambda_{t}^{y} e^{-\lambda_{t}}}{y!}, 
 y = 0, 1, 2, ...
 \end{aligned}
@@ -40,8 +41,9 @@ $$
 F_{t} &= \{Y_{t}, \lambda_{t}, \boldsymbol{X_{t+1}} : t \in \mathbb{N}\} \\
 Y_{t} | F_{t-1} &\sim NegBinom(\lambda_t, \phi_{t}) \\
 \nu_{t} &= log(\lambda_{t}) \\
-\nu_{t} &= \beta_{0} + \sum_{j=1}^p \beta_{j} log(Y_{t-j} + 1) + 
-\boldsymbol{\eta^{T}} \boldsymbol{X_t} \\
+\nu_{t} &= \sum_{j=1}^p \phi_{j} (log(Y_{t-j}) - \boldsymbol{\eta}^{T} 
+\boldsymbol{X}_{t-j}) + \sum_{k=1}^q \psi_k (log(Y_{t-k}) - \nu_{t-k}) + 
+\boldsymbol{\eta}^{T} \boldsymbol{X}_t\\
 P(Y_{t} = y |F_{t-1}) &= \frac{\Gamma (\phi + y)}{\Gamma (y + 1) \Gamma (\phi)} 
 (\frac{\phi}{\phi + \lambda_{t}})^{\phi} 
 (\frac{\lambda_{t}}{\phi + \lambda_{t}})^{y}, 
@@ -49,15 +51,16 @@ y = 0, 1, 2, ...
 \end{aligned}
 $$
 The marginal mean $\lambda_{t}$ of the assumed poisson process is transformed 
-to a linear predictor $\nu_{t}$ and modelled as a linear combination of past 
+to a linear predictor $\nu_{t}$ and modeled as a linear combination of past 
 observations, past conditional means, and covariates. The model is 
 parameterized in a manner resembling a classical ARMA model, with the `p` 
-parameter defining the extent of the autoregressive component.
+parameter defining the extent of the autoregressive component and the `q` 
+parameter defining the moving average component. 
 
 ## Setup
 
 The binned data frame is read and feature names are defined:
-```{r setup}
+```{r var-names}
 binned_df <- read.csv('../Data/binned_df.csv')
 
 resp_names <- c('CA1.1', 'CA1.2', 'CA1.3', 'CA1.4', 'CA1.5', 'CA1.6', 'CA1.7', 
@@ -118,21 +121,22 @@ A function for blocked cross-validation given the response and predictor
 variables of interest, the parameters of a model specification, and an assumed 
 distribution:
 ```{r cross-valid}
-cross_valid <- function(pred_list, resp_list, p, dist) {
+cross_valid <- function(pred_list, resp, p, q, dist) {
   # pred_list: a vector of predictor variables to be included in the data sets
   # resp_list: a vector of response variables to be included in the data sets
   # p: the number of past observations to model on
+  # q: the number of lags to model the conditional mean on
   # dist: the assumed distribution for the marginal time series process
   
   # define empty vector to store MSE values
-  mses <- rep(NA, 4)
+  aics <- rep(NA, 4)
   
   for (i in 1:4) {
     # blocking cross-validation method is progressive
     trials <- list((10 * (i - 1) + 1):(10 * i - 2), (10 * i - 1):(10 * i))
     
     # collect data frames
-    dfs <- gen_df(trls[trials[[1]]], trls[trials[[2]]], pred_list, resp_list)
+    dfs <- gen_df(trls[trials[[1]]], trls[trials[[2]]], pred_list, resp)
     train_df <- dfs[['train_df']]
     valid_df <- dfs[['valid_df']]
     valid_pred <- unlist(dfs[['valid_pred']])
@@ -141,42 +145,38 @@ cross_valid <- function(pred_list, resp_list, p, dist) {
     
     tryCatch(
       {
-        # fit GLAR model
-        model <- tsglm(as.ts(train_df[, 1]), 
-                       xreg = as.matrix(train_df[, -1]), 
-                       model = list(past_obs = 1:p), 
-                       link = 'log', 
-                       distr = dist)
+        # fit GLARMA model
+        model <- glarma(train_df[, 1], 
+                        as.matrix(train_df[, 1]),
+                        phiLags = 1:p,
+                        thetaLags = q)
       }, 
       error = function(err) {
-        print(paste('Model fitting error on ', resp_list, ' (', p, '): ', err, 
-                    sep = ''))
+        print(paste('Model fitting error on ', resp, 
+                    ' (', p, ', ', q, '): ', err, sep = ''))
       }
     )
     
     tryCatch(
       {
-        # calculate MSE from predicted values
-        pred <- predict(model, n.ahead = nrow(valid_df), newxreg = valid_df)
-        mse <- mean((pred[['pred']] - valid_pred)^2, na.rm = TRUE)
-        
-        mses[i] <- round(mse, 4)
+        # extract AIC
+        aics[i] <- round(model$aic, 4)
       }, 
       error = function(err) {
-        print(paste('Model evaluation error on ', resp_list, ' (', p, '): ', 
-                    err, sep = ''))
+        print(paste('Model evaluation error on ', resp, 
+                    ' (', p, ', ', q, '): ', err, sep = ''))
       }
       
     )
   }
   
-  return(mean(mses, na.rm = TRUE))
+  return(mean(aics, na.rm = TRUE))
 }
 ```
 
 # Variable Selection
 
-A function for performing variable selection on the GLAR model using a 
+A function for performing variable selection on the GLARMA model using a 
 forward selection technique based on the effect sizes from the full model. 
 ```{r var-select}
 var_select <- function(select, start, dist) {
@@ -188,7 +188,7 @@ var_select <- function(select, start, dist) {
   
   # define empty list to store best variable subsets
   predictors <<- list()
-  var_select_mses <<- list()
+  var_select_aics <<- list()
   
   for (resp in resp_names) {
     print(paste('Beginning variable selection for:', resp))
@@ -203,11 +203,10 @@ var_select <- function(select, start, dist) {
     tryCatch(
       {
         # fit full model
-        model <- tsglm(as.ts(train_df[, 1]), 
-                       xreg = as.matrix(train_df[, -1]), 
-                       model = list(past_obs = 1:5), 
-                       link = 'log', 
-                       distr = dist)
+        model <- glarma(train_df[, 1],
+                        as.matrix(train_df[, -1]), 
+                        phiLags = 1:5,
+                        thetaLags = 6)
       }, 
       error = function(err) {
         working <- FALSE
@@ -219,10 +218,10 @@ var_select <- function(select, start, dist) {
     tryCatch(
       {
         # extract estimated coefficients from fitted model
-        model_sum <- summary(model)$coefficients$Estimate
+        model_sum <- summary(model)$coefficients1$Estimate
         
         if (dist == 'poisson') {
-          est <- model_sum[-c(1:6, length(model_sum))]
+          est <- model_sum[-length(model_sum)]
         } else{
           est <- model_sum[-c(1:6, length(model_sum) - 1, length(model_sum))]
         }
@@ -242,8 +241,8 @@ var_select <- function(select, start, dist) {
     )
     
     if (working == TRUE) {
-      # define empty vector to store CV MSE results for forward selection
-      mses <- rep(NA, select)
+      # define empty vector to store CV AIC results for forward selection
+      aics <- rep(NA, select)
       
       # perform forward selection with chosen variables
       for (i in 1:length(full_model_select)) {
@@ -251,15 +250,15 @@ var_select <- function(select, start, dist) {
         
         preds <- full_model_select[1:i]
         
-        mses[i] <- cross_valid(preds, resp, 5, dist)
+        aics[i] <- cross_valid(preds, resp, 5, 6, dist)
       }
       
       # store selected best subset 
       forward_select <- data.frame(var_inc = 1:select,
-                                   mse = mses)
+                                   aic = aics)
       predictors[[resp]] <<- full_model_select[1:forward_select$var_inc[which(
-        forward_select$mse == min(forward_select$mse))]]
-      var_select_mses[[resp]] <<- as.numeric(mses)
+        forward_select$aic == min(forward_select$aic))]]
+      var_select_aics[[resp]] <<- as.numeric(aics)
     } else {
       print(paste('Could not perform variable selection for', resp))
     }
@@ -274,18 +273,20 @@ var_select <- function(select, start, dist) {
 
 # Model Fitting
 
-A function for tuning the GLAR models to acceptable parameter values given 
+A function for tuning the GLARMA models to acceptable parameter values given 
 an optimally selected predictor set: 
 ```{r model-tune}
-model_tune <- function(Pmax, predictors, start, dist) {
+model_tune <- function(Pmax, Qmax, predictors, start, dist) {
   # Pmax: the maximum number of past observations to model on
+  # Qmax: the maximum lagged conditional mean to model on
   # predictors: a list of optimal predictor sets for each response
   # start: the start time of the model tuning procedure
   # dist: the assumed distribution for the marginal time series process
 
   # define empty data frame for storing tuned values
   tuned <<- data.frame(resp = resp_names, 
-                       p = rep(NA, length(resp_names)))
+                      p = rep(NA, length(resp_names)),
+                      q = rep(NA, length(resp_names)))
   model_tune_mses <<- list()
   
   # loop over response variables
@@ -293,28 +294,37 @@ model_tune <- function(Pmax, predictors, start, dist) {
     print(paste('Beginning model tuning for:', resp))
     
     # define empty data frame to store MSE results
-    tuning <- data.frame(p = 1:Pmax,
-                         mse = rep(NA, Pmax))
+    tuning <- data.frame(p = rep(1:Pmax, each = Qmax),
+                         q = rep(1:Qmax, times = Pmax),
+                         aic = rep(NA, (Pmax * Qmax)))
     
     # loop over parameter values of interest
     for (p in 1:Pmax) {
-      print(paste('tuning with p=', p, '...', sep=''))
+      for (q in 1:Qmax) {
+        print(paste('tuning with p=', p, ' & q=', q, '...', sep=''))
         
-      # calculate model MSE with given parameters
-      if (is.null(predictors[[resp]])) {
-        tuning$mse[which(tuning$p == p)] <- cross_valid(
-          pred_names, resp, p, dist)
-      } else{
-        tuning$mse[which(tuning$p == p)] <- cross_valid(
-          as.vector(predictors[[resp]]), resp, p, dist)
+        if (q > p) {
+          # calculate model MSE with given parameters
+          if (is.null(predictors[[resp]])) {
+            tuning$aic[which(tuning$p == p & tuning$q == q)] <- cross_valid(
+              pred_names, resp, p, q, dist)
+          } else{
+            tuning$aic[which(tuning$p == p & tuning$q == q)] <- cross_valid(
+              as.vector(predictors[[resp]]), resp, p, q, dist)
+          }
+        } 
       }
     }
     
     # save optimal tuned model parameters
-    tuned_p <- as.numeric(tuning$p[which(tuning$mse == min(tuning$mse, 
+    tuning <- tuning %>%
+      filter(!is.na(aic))
+    tuned_p <- as.numeric(tuning$p[which(tuning$aic == min(tuning$aic, 
                                                            na.rm = TRUE))])
-    tuned[which(tuned$resp == resp), ] <<- c(resp, tuned_p)
-    model_tune_mses[[resp]] <<- as.numeric(tuning$mse)
+    tuned_q <- as.numeric(tuning$q[which(tuning$aic == min(tuning$aic, 
+                                                           na.rm = TRUE))])
+    tuned[which(tuned$resp == resp), ] <<- c(resp, tuned_p, tuned_q)
+    model_tune_aics[[resp]] <<- as.numeric(tuning$aic)
     
     print(paste('Completed after', difftime(Sys.time(), start, unit = 'mins'), 
                 'minutes'))
@@ -342,27 +352,27 @@ fitOpt <- function(predictors, tuned, dist) {
     valid_pred <- dfs[['valid_pred']]
     remove(dfs)
     
-    # collect optimized parameter value
+    # collect optimized parameter values
     p <- as.numeric(tuned$p[which(tuned$resp == resp)])
-
+    q <- as.numeric(tuned$q[which(tuned$resp == resp)])
+    
     print(paste('Fitting optimal model for ', resp, '...', sep = ''))
     
     # fit optimized model
     tryCatch(
       {
-        model <- tsglm(as.ts(train_df[, 1]),
-                       xreg = as.matrix(train_df[, -1]),
-                       model = list(past_obs = 1:p),
-                       link = 'log',
-                       distr = dist)
+        model <- glarma(train_df[, 1],
+                        as.matrix(train_df[, -1]),
+                        phiLags = 1:p,
+                        thetaLags = q)
         
         if (dist == 'poisson') {
           model %>%
-            saveRDS(paste('../Models/GLAR_Pois/model_', resp, '.rds', 
+            saveRDS(paste('../Models/GLARMA_Pois/model_', resp, '.rds', 
                           sep = ''))
         } else {
           model %>%
-            saveRDS(paste('../Models/GLAR_NBinom/model_', resp, '.rds', 
+            saveRDS(paste('../Models/GLARMA_NBinom/model_', resp, '.rds', 
                           sep = ''))    
         }
       }, 
@@ -375,9 +385,27 @@ fitOpt <- function(predictors, tuned, dist) {
     # calculate optimized test MSE
     tryCatch(
       {
-        pred <- predict(model, n.ahead = nrow(valid_df), newxreg = valid_df)
-        mse <- mean((pred[['pred']] - valid_pred[, resp])^2, na.rm = TRUE)
+        R <- 100
         
+        y_pred <- rep(NA, nrow(valid_df))
+        
+        model <- glarma(train_df[, 1], as.matrix(train_df[, -1]), phiLags = 1:p, thetaLags = q)
+        
+        for (t in 1:nrow(valid_df)) {
+          newYs <- rep(NA, R)
+          for (r in 1:R) {
+            newYs[r] <- forecast(model, n.ahead = 1, newdata = as.matrix(valid_df[t, ]))$Y
+          }
+          y_pred[t] <- mean(newYs)
+          
+          print(paste('Forecasting complete for time ', t, '...', sep = ''))
+          
+          model <- glarma(c(train_df[, 1], valid_pred[t, 1]), 
+                          as.matrix(rbind(train_df[, -1], valid_df[t, ])), 
+                          phiLags = 1:5, thetaLags = 6)
+        }
+        
+        mse <- mean((y_pred - valid_pred[, 1])^2, na.rm = TRUE)
         test_mses$mse[which(test_mses$resp == resp)] <- mse
       }, 
       error = function(err) {
@@ -386,7 +414,7 @@ fitOpt <- function(predictors, tuned, dist) {
       }
     )
   }
-
+  
   return(test_mses)
 }
 ```
@@ -397,7 +425,7 @@ getCoefs <- function(predictors, dist) {
   # predictors: a list of optimal predictor sets for each response
   # dist: the assumed distribution for the marginal time series process
   
-  working <- TRUE
+  working <- TRUE 
   
   # define empty data frame to store coefficients
   coefs <- data.frame(resp = resp_names,
@@ -406,6 +434,7 @@ getCoefs <- function(predictors, dist) {
                       beta_3 = rep(NA, 15),
                       beta_4 = rep(NA, 15),
                       beta_5 = rep(NA, 15),
+                      alpha = rep(NA, 15),
                       CA3.1 = rep(NA, 15),
                       CA3.2 = rep(NA, 15),
                       CA3.3 = rep(NA, 15),
@@ -437,10 +466,10 @@ getCoefs <- function(predictors, dist) {
     tryCatch(
       {
         if (dist == 'poisson') {
-          model <- readRDS(paste('../Models/GLAR_Pois/model_', resp, '.rds',
+          model <- readRDS(paste('../Models/GLARMA_Pois/model_', resp, '.rds',
                                  sep = ''))
         } else {
-          model <- readRDS(paste('../Models/GLAR_NBinom/model_', resp, 
+          model <- readRDS(paste('../Models/GLARMA_NBinom/model_', resp, 
                                  '.rds', sep = ''))
         }
       }, 
@@ -466,20 +495,21 @@ getCoefs <- function(predictors, dist) {
           !grepl('Intercept', rowNms) & 
           !grepl('sigma', rowNms) &
           !grepl('trial', rowNms))]
+      nms[which(grepl('alpha', nms))] <- 'alpha'
       nms <- c(nms, predictors[[resp]], 'trial')
       
-      coefs[which(coefs$resp == resp), nms] <- abs(est)
+      coefs[which(coefs$resp == resp), nms] <- est
     }
   }
   
   if (dist == 'poisson') {
     coefs %>%
-      saveRDS('../Optimize/GLAR_Pois/coefs.RData')
+      saveRDS('../Optimize/GLARMA_Pois/coefs.RData')
   } else {
     coefs %>%
-      saveRDS('../Optimize/GLAR_NBinom/coefs.RData')
+      saveRDS('../Optimize/GLARMA_NBinom/coefs.RData')
   }
-
+  
   return(coefs)
 }
 ```
@@ -497,22 +527,22 @@ start <- Sys.time()
 predictors <- var_select(5, start, dist)
   
 # find optimal model parameters
-tuned <- model_tune(5, predictors, start, dist)
+tuned <- model_tune(5, 6, predictors, start, dist)
 ```
 
 Save optimized predictor subsets and parameters, and associated MSE values:
 ```{r results-poisson}
 predictors %>%
-  saveRDS('../Optimize/GLAR_Pois/predictors.RData')
+  saveRDS('../Optimize/GLARMA_Pois/predictors.RData')
 
 tuned %>%
-  saveRDS('../Optimize/GLAR_Pois/tuned.RData')
+  saveRDS('../Optimize/GLARMA_Pois/tuned.RData')
 
-var_select_mses %>%
-  saveRDS('../Optimize/GLAR_Pois/varSelectMSE.RData')
+var_select_aics %>%
+  saveRDS('../Optimize/GLARMA_Pois/varSelectAIC.RData')
 
-model_tune_mses %>%
-  saveRDS('../Optimize/GLAR_Pois/modelTuneMSE.RData')
+model_tune_aics %>%
+  saveRDS('../Optimize/GLARMA_Pois/modelTuneAIC.RData')
 ```
 
 Fit optimal poisson models using selected predictors and parameters:
@@ -522,7 +552,7 @@ start <- Sys.time()
 test_mses <- fitOpt(predictors, tuned, dist)
 
 test_mses %>%
-  saveRDS('../Optimize/GLAR_Pois/test_mses.RData')
+  saveRDS('../Optimize/GLARMA_Pois/test_mses.RData')
 
 print(paste('Completed after', 
             difftime(Sys.time(), start, unit = 'mins'), 'minutes'))
@@ -536,12 +566,13 @@ coefs %>%
   pivot_longer(!resp, names_to = 'pred', values_to = 'est') %>%
   ggplot() +
   geom_tile(aes(factor(pred, levels = c('beta_1', 'beta_2', 'beta_3', 'beta_4', 
-                                        'beta_5', pred_names, 'trial')),
+                                        'beta_5', 'alpha', pred_names, 
+                                        'trial')),
                 factor(resp, levels = resp_names), 
                 fill = as.numeric(est))) +
   scale_fill_continuous() +
   theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +
-  labs(title='Poisson GLAR Coefficient Estimates', 
+  labs(title='Poisson GLARMA Coefficient Estimates', 
        x='Predictor', y='Response', fill='')
 ```
 
@@ -568,22 +599,22 @@ start <- Sys.time()
 predictors <- var_select(5, start, dist)
   
 # find optimal model parameters
-tuned <- model_tune(5, predictors, start, dist)
+tuned <- model_tune(5, 5, predictors, start, dist)
 ```
 
 Save optimized predictor subsets and parameters, and associated MSE values:
 ```{r results-nbinom}
 predictors %>%
-  saveRDS('../Optimize/GLAR_NBinom/predictors.RData')
+  saveRDS('../Optimize/GLARMA_NBinom/predictors.RData')
 
 tuned %>%
-  saveRDS('../Optimize/GLAR_NBinom/tuned.RData')
+  saveRDS('../Optimize/GLARMA_NBinom/tuned.RData')
 
-var_select_mses %>%
-  saveRDS('../Optimize/GLAR_NBinom/varSelectMSE.RData')
+var_select_aics %>%
+  saveRDS('../Optimize/GLARMA_NBinom/varSelectAIC.RData')
 
-model_tune_mses %>%
-  saveRDS('../Optimize/GLAR_NBinom/modelTuneMSE.RData')
+model_tune_aics %>%
+  saveRDS('../Optimize/GLARMA_NBinom/modelTuneAIC.RData')
 ```
 
 Fit optimal negative binomial models using selected predictors and parameters:
@@ -593,7 +624,7 @@ start <- Sys.time()
 test_mses <- fitOpt(predictors, tuned, dist)
 
 test_mses %>%
-  saveRDS('../Optimize/GLAR_NBinom/test_mses.RData')
+  saveRDS('../Optimize/GLARMA_NBinom/test_mses.RData')
 
 print(paste('Completed after', 
             difftime(Sys.time(), start, unit = 'mins'), 'minutes'))
@@ -607,12 +638,13 @@ coefs %>%
   pivot_longer(!resp, names_to = 'pred', values_to = 'est') %>%
   ggplot() +
   geom_tile(aes(factor(pred, levels = c('beta_1', 'beta_2', 'beta_3', 'beta_4', 
-                                        'beta_5', pred_names, 'trial')),
+                                        'beta_5', 'alpha', pred_names, 
+                                        'trial')),
                 factor(resp, levels = resp_names), 
                 fill = as.numeric(est))) +
   scale_fill_continuous() +
   theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +
-  labs(title='Negative Binomial GLAR Coefficient Estimates', 
+  labs(title='Negative Binomial GLARMA Coefficient Estimates', 
        x='Predictor', y='Response', fill='')
 ```
 
@@ -633,36 +665,39 @@ dist <- 'poisson'
 resp <- 'CA1.1'
 
 if (dist == 'poisson') {
-  readRDS(paste('../Models/GLAR_Pois/model_', resp, '.rds', sep = '')) %>% 
+  readRDS(paste('../Models/GLARMA_Pois/model_', resp, '.rds', sep = '')) %>% 
     plot()
 } else {
-  readRDS(paste('../Models/GLAR_NBinom/model_', resp, '.rds', sep = '')) %>% 
+  readRDS(paste('../Models/GLARMA_NBinom/model_', resp, '.rds', sep = '')) %>% 
     plot()
 }
 
 if (dist == 'poisson') {
-  predictors <- readRDS('../Optimize/GLAR_Pois/predictors.RData')
-  tuned <- readRDS('../Optimize/GLAR_Pois/tuned.RData')
+  predictors <- readRDS('../Optimize/GLARMA_Pois/predictors.RData')
+  tuned <- readRDS('../Optimize/GLARMA_Pois/tuned.RData')
 } else {
-  predictors <- readRDS('../Optimize/GLAR_NBinom/predictors.RData')
-  tuned <- readRDS('../Optimize/GLAR_NBinom/tuned.RData')
+  predictors <- readRDS('../Optimize/GLARMA_NBinom/predictors.RData')
+  tuned <- readRDS('../Optimize/GLARMA_NBinom/tuned.RData')
 }
 
 p <- as.numeric(tuned$p[which(tuned$resp == resp)])
+q <- as.numeric(tuned$q[which(tuned$resp == resp)])
 
 # collect data frames
-dfs <- gen_df(1:60, 61:80, predictors[[resp]], resp)
+dfs <- gen_df(trls[1:40], trls[41:46], pred_names, resp)
 train_df <- dfs[['train_df']]
 valid_df <- dfs[['valid_df']]
 valid_pred <- dfs[['valid_pred']]
 remove(dfs)
 
-# fit INGARCH model
-test_model <- tsglm(as.ts(train_df[, 1]), 
-               xreg = as.matrix(train_df[, -1]), 
-               model = list(past_obs = 1:p), 
-               link = 'log', 
-               distr = dist)
+# fit GLARMA model
+test_model <- glarma(train_df[, 1],
+                     as.matrix(train_df[, -1]),
+                     phiLags = 1:p, 
+                     thetaLags = q,
+                     type = 'Poi',
+                     method = 'FS',
+                     residuals = 'Pearson')
 
 summary(test_model)
 
@@ -670,3 +705,26 @@ summary(test_model)
 pred <- predict(test_model, n.ahead = nrow(valid_df), newxreg = valid_df)
 mean((pred[['pred']] - valid_pred[, resp])^2, na.rm = TRUE)
 ```
+
+```{r}
+R <- 100
+
+y_pred <- rep(NA, 100)
+
+model <- glarma(train_df[, 1], as.matrix(train_df[, -1]), phiLags = 1:5, thetaLags = 6)
+
+for (t in 1:100) {
+  # newYs <- rep(NA, R)
+  # for (r in 1:R) {
+  #   newYs[r] <- forecast(model, n.ahead = 1, newdata = as.matrix(valid_df[t, ]))$Y
+  # }
+  y_pred[t] <- forecast(model, n.ahead = 1, newdata = as.matrix(valid_df[t, ]))$Y
+  print(paste('Forecasting complete for time ', t, '...', sep = ''))
+  model <- glarma(c(train_df[, 1], valid_pred[t, 1]), 
+                  as.matrix(rbind(train_df[, -1], valid_df[t, ])), 
+                  phiLags = 1:5, thetaLags = 6)
+}
+
+mean((y_pred - valid_pred[, 1])^2)
+```
+
