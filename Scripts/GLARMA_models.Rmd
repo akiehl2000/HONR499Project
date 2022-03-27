@@ -147,7 +147,7 @@ cross_valid <- function(pred_list, resp, p, q, dist) {
       {
         # fit GLARMA model
         model <- glarma(train_df[, 1], 
-                        as.matrix(train_df[, 1]),
+                        as.matrix(train_df[, -1]),
                         phiLags = 1:p,
                         thetaLags = q)
       }, 
@@ -287,7 +287,7 @@ model_tune <- function(Pmax, Qmax, predictors, start, dist) {
   tuned <<- data.frame(resp = resp_names, 
                       p = rep(NA, length(resp_names)),
                       q = rep(NA, length(resp_names)))
-  model_tune_mses <<- list()
+  model_tune_aics <<- list()
   
   # loop over response variables
   for (resp in resp_names) {
@@ -429,12 +429,12 @@ getCoefs <- function(predictors, dist) {
   
   # define empty data frame to store coefficients
   coefs <- data.frame(resp = resp_names,
-                      beta_1 = rep(NA, 15),
-                      beta_2 = rep(NA, 15),
-                      beta_3 = rep(NA, 15),
-                      beta_4 = rep(NA, 15),
-                      beta_5 = rep(NA, 15),
-                      alpha = rep(NA, 15),
+                      phi_1 = rep(NA, 15),
+                      phi_2 = rep(NA, 15),
+                      phi_3 = rep(NA, 15),
+                      phi_4 = rep(NA, 15),
+                      phi_5 = rep(NA, 15),
+                      theta = rep(NA, 15),
                       CA3.1 = rep(NA, 15),
                       CA3.2 = rep(NA, 15),
                       CA3.3 = rep(NA, 15),
@@ -481,23 +481,19 @@ getCoefs <- function(predictors, dist) {
     # collect model coefficient estimates
     if (working == TRUE & !is.null(predictors[[resp]])) {
       model_sum <- summary(model)
-      rowNms <- rownames(model_sum$coefficients)
-      model_sum <- model_sum$coefficients$Estimate
-      
-      if (dist == 'poisson') {
-        est <- model_sum[-1]
-      } else {
-        est <- model_sum[-c(1, length(model_sum))]
-      }
-      
+      rowNms <- c(rownames(model_sum$coefficients2),
+                  rownames(model_sum$coefficients1))
+      est <- c(model_sum$coefficients2$Estimate, 
+               model_sum$coefficients1$Estimate)
+     
       nms <- rowNms[which(
-        !grepl('var', rowNms) & 
+          !grepl('var', rowNms) & 
           !grepl('Intercept', rowNms) & 
           !grepl('sigma', rowNms) &
           !grepl('trial', rowNms))]
-      nms[which(grepl('alpha', nms))] <- 'alpha'
+      nms[which(grepl('theta', nms))] <- 'theta'
       nms <- c(nms, predictors[[resp]], 'trial')
-      
+
       coefs[which(coefs$resp == resp), nms] <- est
     }
   }
@@ -565,8 +561,8 @@ coefs <- getCoefs(predictors, dist)
 coefs %>%
   pivot_longer(!resp, names_to = 'pred', values_to = 'est') %>%
   ggplot() +
-  geom_tile(aes(factor(pred, levels = c('beta_1', 'beta_2', 'beta_3', 'beta_4', 
-                                        'beta_5', 'alpha', pred_names, 
+  geom_tile(aes(factor(pred, levels = c('phi_1', 'phi_2', 'phi_3', 'phi_4', 
+                                        'phi_5', 'theta', pred_names, 
                                         'trial')),
                 factor(resp, levels = resp_names), 
                 fill = as.numeric(est))) +
