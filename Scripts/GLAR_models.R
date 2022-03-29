@@ -64,12 +64,11 @@ gen_df <- function(train_trials, valid_trials, pred, resp) {
               'valid_pred' = valid_pred))
 }
 
-# cross-validation function
-cross_valid <- function(pred_list, resp_list, p, q, dist) {
+# cross validation function
+cross_valid <- function(pred_list, resp_list, p, dist) {
   # pred_list: a vector of predictor variables to be included in the data sets
   # resp_list: a vector of response variables to be included in the data sets
   # p: the number of past observations to model on
-  # q: the number of lags to model the conditional mean on
   # dist: the assumed distribution for the marginal time series process
   
   # define empty vector to store MSE values
@@ -89,16 +88,16 @@ cross_valid <- function(pred_list, resp_list, p, q, dist) {
     
     tryCatch(
       {
-        # fit INGARCH model
+        # fit GLAR model
         model <- tsglm(as.ts(train_df[, 1]), 
                        xreg = as.matrix(train_df[, -1]), 
-                       model = list(past_obs = 1:p, past_mean = q), 
+                       model = list(past_obs = 1:p), 
                        link = 'log', 
                        distr = dist)
       }, 
       error = function(err) {
-        print(paste('Model fitting error on ', resp_list, 
-                    ' (', p, ', ', q, '): ', err, sep = ''))
+        print(paste('Model fitting error on ', resp_list, ' (', p, '): ', err, 
+                    sep = ''))
       }
     )
     
@@ -111,8 +110,8 @@ cross_valid <- function(pred_list, resp_list, p, q, dist) {
         mses[i] <- round(mse, 4)
       }, 
       error = function(err) {
-        print(paste('Model evaluation error on ', resp_list, 
-                    ' (', p, ', ', q, '): ', err, sep = ''))
+        print(paste('Model evaluation error on ', resp_list, ' (', p, '): ', 
+                    err, sep = ''))
       }
       
     )
@@ -155,7 +154,7 @@ var_select <- function(select, start, dist, type) {
         # fit full model
         model <- tsglm(as.ts(train_df[, 1]), 
                        xreg = as.matrix(train_df[, -1]), 
-                       model = list(past_obs = 1:5, past_mean = 5), 
+                       model = list(past_obs = 1:5), 
                        link = 'log', 
                        distr = dist)
       }, 
@@ -172,9 +171,9 @@ var_select <- function(select, start, dist, type) {
         model_sum <- summary(model)$coefficients$Estimate
         
         if (dist == 'poisson') {
-          est <- model_sum[-c(1:7, length(model_sum))]
+          est <- model_sum[-c(1:6, length(model_sum))]
         } else{
-          est <- model_sum[-c(1:7, length(model_sum) - 1, length(model_sum))]
+          est <- model_sum[-c(1:6, length(model_sum) - 1, length(model_sum))]
         }
         
         if (type == 'ir') {
@@ -208,7 +207,7 @@ var_select <- function(select, start, dist, type) {
         
         preds <- full_model_select[1:i]
         
-        mses[i] <- cross_valid(preds, resp, 5, 5, dist)
+        mses[i] <- cross_valid(preds, resp, 5, dist)
       }
       
       # store selected best subset 
@@ -229,17 +228,15 @@ var_select <- function(select, start, dist, type) {
 }
 
 # parameter tuning function
-model_tune <- function(Pmax, Qmax, predictors, start, dist) {
+model_tune <- function(Pmax, predictors, start, dist) {
   # Pmax: the maximum number of past observations to model on
-  # Qmax: the maximum lagged conditional mean to model on
   # predictors: a list of optimal predictor sets for each response
   # start: the start time of the model tuning procedure
   # dist: the assumed distribution for the marginal time series process
   
   # define empty data frame for storing tuned values
   tuned <<- data.frame(resp = resp_names, 
-                       p = rep(NA, length(resp_names)),
-                       q = rep(NA, length(resp_names)))
+                       p = rep(NA, length(resp_names)))
   model_tune_mses <<- list()
   
   # loop over response variables
@@ -247,32 +244,27 @@ model_tune <- function(Pmax, Qmax, predictors, start, dist) {
     print(paste('Beginning model tuning for:', resp))
     
     # define empty data frame to store MSE results
-    tuning <- data.frame(p = rep(1:Pmax, each = Qmax),
-                         q = rep(1:Qmax, times = Pmax),
-                         mse = rep(NA, (Pmax * Qmax)))
+    tuning <- data.frame(p = 1:Pmax,
+                         mse = rep(NA, Pmax))
     
     # loop over parameter values of interest
     for (p in 1:Pmax) {
-      for (q in 1:Qmax) {
-        print(paste('tuning with p=', p, ' & q=', q, '...', sep=''))
-        
-        # calculate model MSE with given parameters
-        if (is.null(predictors[[resp]])) {
-          tuning$mse[which(tuning$p == p & tuning$q == q)] <- cross_valid(
-            pred_names, resp, p, q, dist)
-        } else{
-          tuning$mse[which(tuning$p == p & tuning$q == q)] <- cross_valid(
-            as.vector(predictors[[resp]]), resp, p, q, dist)
-        }
+      print(paste('tuning with p=', p, '...', sep=''))
+      
+      # calculate model MSE with given parameters
+      if (is.null(predictors[[resp]])) {
+        tuning$mse[which(tuning$p == p)] <- cross_valid(
+          pred_names, resp, p, dist)
+      } else{
+        tuning$mse[which(tuning$p == p)] <- cross_valid(
+          as.vector(predictors[[resp]]), resp, p, dist)
       }
     }
     
     # save optimal tuned model parameters
     tuned_p <- as.numeric(tuning$p[which(tuning$mse == min(tuning$mse, 
                                                            na.rm = TRUE))])
-    tuned_q <- as.numeric(tuning$q[which(tuning$mse == min(tuning$mse, 
-                                                           na.rm = TRUE))])
-    tuned[which(tuned$resp == resp), ] <<- c(resp, tuned_p, tuned_q)
+    tuned[which(tuned$resp == resp), ] <<- c(resp, tuned_p)
     model_tune_mses[[resp]] <<- as.numeric(tuning$mse)
     
     print(paste('Completed after', difftime(Sys.time(), start, unit = 'mins'), 
@@ -299,9 +291,8 @@ fitOpt <- function(predictors, tuned, dist, type) {
     valid_pred <- dfs[['valid_pred']]
     remove(dfs)
     
-    # collect optimized parameter values
+    # collect optimized parameter value
     p <- as.numeric(tuned$p[which(tuned$resp == resp)])
-    q <- as.numeric(tuned$q[which(tuned$resp == resp)])
     
     print(paste('Fitting optimal model for ', resp, '...', sep = ''))
     
@@ -310,25 +301,25 @@ fitOpt <- function(predictors, tuned, dist, type) {
       {
         model <- tsglm(as.ts(train_df[, 1]),
                        xreg = as.matrix(train_df[, -1]),
-                       model = list(past_obs = 1:p, past_mean = q),
+                       model = list(past_obs = 1:p),
                        link = 'log',
                        distr = dist)
         
         if (dist == 'poisson' & type == 'ir') {
           model %>%
-            saveRDS(paste('../Models/INGARCH_Pois_IR/model_', resp, '.rds', 
+            saveRDS(paste('../Models/GLAR_Pois_IR/model_', resp, '.rds', 
                           sep = ''))
         } else if (dist == 'poisson' & type == 'wr') {
           model %>%
-            saveRDS(paste('../Models/INGARCH_Pois_WR/model_', resp, '.rds', 
+            saveRDS(paste('../Models/GLAR_Pois_WR/model_', resp, '.rds', 
                           sep = ''))
         } else if (dist == 'nbinom' & type == 'ir') {
           model %>%
-            saveRDS(paste('../Models/INGARCH_NBinom_IR/model_', resp, '.rds', 
+            saveRDS(paste('../Models/GLAR_NBinom_IR/model_', resp, '.rds', 
                           sep = ''))    
         } else {
           model %>%
-            saveRDS(paste('../Models/INGARCH_NBinom_WR/model_', resp, '.rds', 
+            saveRDS(paste('../Models/GLAR_NBinom_WR/model_', resp, '.rds', 
                           sep = ''))    
         }
       }, 
@@ -357,11 +348,11 @@ fitOpt <- function(predictors, tuned, dist, type) {
 }
 
 # coefficient collection function
-getCoefs <- function(predictors, dist, type) {
+getCoefs <- function(predictors, dist) {
   # predictors: a list of optimal predictor sets for each response
   # dist: the assumed distribution for the marginal time series process
   
-  working <- TRUE 
+  working <- TRUE
   
   # define empty data frame to store coefficients
   coefs <- data.frame(resp = resp_names,
@@ -370,7 +361,6 @@ getCoefs <- function(predictors, dist, type) {
                       beta_3 = rep(NA, 15),
                       beta_4 = rep(NA, 15),
                       beta_5 = rep(NA, 15),
-                      alpha = rep(NA, 15),
                       CA3.1 = rep(NA, 15),
                       CA3.2 = rep(NA, 15),
                       CA3.3 = rep(NA, 15),
@@ -402,16 +392,16 @@ getCoefs <- function(predictors, dist, type) {
     tryCatch(
       {
         if (dist == 'poisson' & type == 'ir') {
-          model <- readRDS(paste('../Models/INGARCH_Pois_IR/model_', resp, 
+          model <- readRDS(paste('../Models/GLAR_Pois_IR/model_', resp, 
                                  '.rds', sep = ''))
         } else if (dist == 'poisson' & type =='wr') {
-          model <- readRDS(paste('../Models/INGARCH_Pois_WR/model_', resp, 
+          model <- readRDS(paste('../Models/GLAR_Pois_WR/model_', resp, 
                                  '.rds', sep = ''))
         } else if (dist == 'nbinom' & type == 'ir') {
-          model <- readRDS(paste('../Models/INGARCH_NBinom_IR/model_', resp, 
+          model <- readRDS(paste('../Models/GLAR_NBinom_IR/model_', resp, 
                                  '.rds', sep = ''))
         } else {
-          model <- readRDS(paste('../Models/INGARCH_NBinom_WR/model_', resp, 
+          model <- readRDS(paste('../Models/GLAR_NBinom_WR/model_', resp, 
                                  '.rds', sep = ''))
         }
       }, 
@@ -437,7 +427,6 @@ getCoefs <- function(predictors, dist, type) {
           !grepl('Intercept', rowNms) & 
           !grepl('sigma', rowNms) &
           !grepl('trial', rowNms))]
-      nms[which(grepl('alpha', nms))] <- 'alpha'
       nms <- c(nms, predictors[[resp]], 'trial')
       
       coefs[which(coefs$resp == resp), nms] <- abs(est)
@@ -446,16 +435,16 @@ getCoefs <- function(predictors, dist, type) {
   
   if (dist == 'poisson' & type == 'ir') {
     coefs %>%
-      saveRDS('../Optimize/INGARCH_Pois_IR/coefs.RData')
+      saveRDS('../Optimize/GLAR_Pois_IR/coefs.RData')
   } else if (dist == 'poisson' & type == 'wr') {
     coefs %>%
-      saveRDS('../Optimize/INGARCH_Pois_WR/coefs.RData')
+      saveRDS('../Optimize/GLAR_Pois_WR/coefs.RData')
   } else if (dist == 'nbinom' & type == 'ir') {
     coefs %>%
-      saveRDS('../Optimize/INGARCH_NBinom_IR/coefs.RData')
+      saveRDS('../Optimize/GLAR_NBinom_IR/coefs.RData')
   } else {
     coefs %>%
-      saveRDS('../Optimize/INGARCH_NBinom_WR/coefs.RData')
+      saveRDS('../Optimize/GLAR_NBinom_WR/coefs.RData')
   }
   
   return(coefs)
@@ -476,22 +465,22 @@ tryCatch(
     predictors <- var_select(5, start, dist, type)
     
     # find optimal model parameters
-    tuned <- model_tune(5, 5, predictors, start, dist)
+    tuned <- model_tune(5, predictors, start, dist)
     
     # save results
     predictors %>%
-      saveRDS('../Optimize/INGARCH_Pois_IR/predictors.RData')
+      saveRDS('../Optimize/GLAR_Pois_IR/predictors.RData')
     tuned %>%
-      saveRDS('../Optimize/INGARCH_Pois_IR/tuned.RData')
+      saveRDS('../Optimize/GLAR_Pois_IR/tuned.RData')
     var_select_mses %>%
-      saveRDS('../Optimize/INGARCH_Pois_IR/varSelectMSE.RData')
+      saveRDS('../Optimize/GLAR_Pois_IR/varSelectMSE.RData')
     model_tune_mses %>%
-      saveRDS('../Optimize/INGARCH_Pois_IR/modelTuneMSE.RData')
+      saveRDS('../Optimize/GLAR_Pois_IR/modelTuneMSE.RData')
     
     test_mses <- fitOpt(predictors, tuned, dist, type)
     
     test_mses %>%
-      saveRDS('../Optimize/INGARCH_Pois_IR/test_mses.RData')
+      saveRDS('../Optimize/GLAR_Pois_IR/test_mses.RData')
     
     coefs <- getCoefs(predictors, dist, type)
     
@@ -514,22 +503,22 @@ tryCatch(
     predictors <- var_select(5, start, dist, type)
     
     # find optimal model parameters
-    tuned <- model_tune(5, 5, predictors, start, dist)
+    tuned <- model_tune(5, predictors, start, dist)
     
     # save results
     predictors %>%
-      saveRDS('../Optimize/INGARCH_Pois_WR/predictors.RData')
+      saveRDS('../Optimize/GLAR_Pois_WR/predictors.RData')
     tuned %>%
-      saveRDS('../Optimize/INGARCH_Pois_WR/tuned.RData')
+      saveRDS('../Optimize/GLAR_Pois_WR/tuned.RData')
     var_select_mses %>%
-      saveRDS('../Optimize/INGARCH_Pois_WR/varSelectMSE.RData')
+      saveRDS('../Optimize/GLAR_Pois_WR/varSelectMSE.RData')
     model_tune_mses %>%
-      saveRDS('../Optimize/INGARCH_Pois_WR/modelTuneMSE.RData')
+      saveRDS('../Optimize/GLAR_Pois_WR/modelTuneMSE.RData')
     
     test_mses <- fitOpt(predictors, tuned, dist, type)
     
     test_mses %>%
-      saveRDS('../Optimize/INGARCH_Pois_WR/test_mses.RData')
+      saveRDS('../Optimize/GLAR_Pois_WR/test_mses.RData')
     
     coefs <- getCoefs(predictors, dist, type)
     
@@ -553,22 +542,22 @@ tryCatch(
     predictors <- var_select(5, start, dist, type)
     
     # find optimal model parameters
-    tuned <- model_tune(5, 5, predictors, start, dist)
+    tuned <- model_tune(5, predictors, start, dist)
     
     # save results
     predictors %>%
-      saveRDS('../Optimize/INGARCH_NBinom_IR/predictors.RData')
+      saveRDS('../Optimize/GLAR_NBinom_IR/predictors.RData')
     tuned %>%
-      saveRDS('../Optimize/INGARCH_NBinom_IR/tuned.RData')
+      saveRDS('../Optimize/GLAR_NBinom_IR/tuned.RData')
     var_select_mses %>%
-      saveRDS('../Optimize/INGARCH_NBinom_IR/varSelectMSE.RData')
+      saveRDS('../Optimize/GLAR_NBinom_IR/varSelectMSE.RData')
     model_tune_mses %>%
-      saveRDS('../Optimize/INGARCH_NBinom_IR/modelTuneMSE.RData')
+      saveRDS('../Optimize/GLAR_NBinom_IR/modelTuneMSE.RData')
     
     test_mses <- fitOpt(predictors, tuned, dist)
     
     test_mses %>%
-      saveRDS('../Optimize/INGARCH_NBinom_IR/test_mses.RData')
+      saveRDS('../Optimize/GLAR_NBinom_IR/test_mses.RData')
     
     print(paste('Completed after', 
                 difftime(Sys.time(), start, unit = 'mins'), 'minutes'))
@@ -589,22 +578,22 @@ tryCatch(
     predictors <- var_select(5, start, dist, type)
     
     # find optimal model parameters
-    tuned <- model_tune(5, 5, predictors, start, dist)
+    tuned <- model_tune(5, predictors, start, dist)
     
     # save results
     predictors %>%
-      saveRDS('../Optimize/INGARCH_NBinom_WR/predictors.RData')
+      saveRDS('../Optimize/GLAR_NBinom_WR/predictors.RData')
     tuned %>%
-      saveRDS('../Optimize/INGARCH_NBinom_WR/tuned.RData')
+      saveRDS('../Optimize/GLAR_NBinom_WR/tuned.RData')
     var_select_mses %>%
-      saveRDS('../Optimize/INGARCH_NBinom_WR/varSelectMSE.RData')
+      saveRDS('../Optimize/GLAR_NBinom_WR/varSelectMSE.RData')
     model_tune_mses %>%
-      saveRDS('../Optimize/INGARCH_NBinom_WR/modelTuneMSE.RData')
+      saveRDS('../Optimize/GLAR_NBinom_WR/modelTuneMSE.RData')
     
     test_mses <- fitOpt(predictors, tuned, dist)
     
     test_mses %>%
-      saveRDS('../Optimize/INGARCH_NBinom_WR/test_mses.RData')
+      saveRDS('../Optimize/GLAR_NBinom_WR/test_mses.RData')
     
     print(paste('Completed after', 
                 difftime(Sys.time(), start, unit = 'mins'), 'minutes'))
@@ -612,4 +601,3 @@ tryCatch(
     print(paste('Error fitting Negative Binomial within-region models:', err))
   }
 )
-
