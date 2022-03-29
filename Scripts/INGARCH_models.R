@@ -33,19 +33,19 @@ gen_df <- function(train_trials, valid_trials, pred, resp) {
   # generate training set
   train_df <- binned_df %>%
     filter(trial %in% as.vector(train_trials)) %>%
-    select(c(all_of(resp), all_of(pred), trial)) %>%
+    select(c(resp, pred, trial)) %>%
     data.frame()
   
   # generate validation set
   valid_df <- binned_df %>%
     filter(trial %in% as.vector(valid_trials)) %>%
-    select(c(all_of(pred), trial)) %>%
+    select(c(pred, trial)) %>%
     data.frame()
   
   # values to compare predicted values with
   valid_pred <- binned_df %>%
     filter(trial %in% as.vector(valid_trials)) %>%
-    select(all_of(resp))
+    select(resp)
   
   # select only non-zero predictor vectors
   zeros <- c()
