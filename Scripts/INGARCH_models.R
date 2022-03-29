@@ -178,12 +178,19 @@ var_select <- function(select, start, dist, type) {
           est <- model_sum[-c(1:7, length(model_sum) - 1, length(model_sum))]
         }
         
-        full_model_select <- data.frame(var = pred_names, coef = est) %>%
-          arrange(desc(abs(coef))) %>%
-          top_n(select, coef) %>%
-          select(var) %>%
-          unlist()
-        
+        if (type == 'ir') {
+          full_model_select <- data.frame(var = pred_names, coef = est) %>%
+            arrange(desc(abs(coef))) %>%
+            top_n(select, coef) %>%
+            select(var) %>%
+            unlist()
+        } else {
+          full_model_select <- data.frame(var = resp_names[-which(resp_names == resp)], coef = est) %>%
+            arrange(desc(abs(coef))) %>%
+            top_n(select, coef) %>%
+            select(var) %>%
+            unlist()
+        }
       }, 
       error = function(err) {
         working <- FALSE
@@ -544,7 +551,7 @@ tryCatch(
     start <- Sys.time()
     
     # collect optimal predictor subsets
-    predictors <- var_select(5, start, dist)
+    predictors <- var_select(5, start, dist, type)
     
     # find optimal model parameters
     tuned <- model_tune(5, 5, predictors, start, dist)
@@ -580,7 +587,7 @@ tryCatch(
     start <- Sys.time()
     
     # collect optimal predictor subsets
-    predictors <- var_select(5, start, dist)
+    predictors <- var_select(5, start, dist, type)
     
     # find optimal model parameters
     tuned <- model_tune(5, 5, predictors, start, dist)
@@ -606,3 +613,4 @@ tryCatch(
     print(paste('Error fitting Negative Binomial within-region models:', err))
   }
 )
+
