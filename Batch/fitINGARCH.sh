@@ -5,7 +5,7 @@
 #SBATCH --job-name=fitINGARCH
 #SBATCH --output=../Output/INGARCH/%x_%a_%j.out
 #SBATCH --error=../Output/INGARCH/%x_%a_%j.err
-#SBATCH --time=48:00:00
+#SBATCH --time=24:00:00
 #SBATCH --nodes=1
 #SBATCH --mail-user=adam.kiehl@colostate.edu
 #SBATCH --mail-type=ALL
