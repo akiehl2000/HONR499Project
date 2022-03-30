@@ -154,7 +154,8 @@ var_select <- function(select, start, dist, type) {
         model <- glarma(train_df[, 1],
                         as.matrix(train_df[, -1]), 
                         phiLags = 1:5,
-                        thetaLags = 6)
+                        thetaLags = 6, 
+                        type = dist)
       }, 
       error = function(err) {
         working <- FALSE
@@ -168,7 +169,7 @@ var_select <- function(select, start, dist, type) {
         # extract estimated coefficients from fitted model
         model_sum <- summary(model)$coefficients1$Estimate
         
-        if (dist == 'poisson') {
+        if (dist == 'Poi') {
           est <- model_sum[-length(model_sum)]
         } else{
           est <- model_sum[-c(1:6, length(model_sum) - 1, length(model_sum))]
@@ -313,18 +314,19 @@ fitOpt <- function(predictors, tuned, dist, type) {
         model <- glarma(train_df[, 1],
                         as.matrix(train_df[, -1]),
                         phiLags = 1:p,
-                        thetaLags = q)
+                        thetaLags = q, 
+                        type = dist)
         
         
-        if (dist == 'poisson' & type == 'ir') {
+        if (dist == 'Poi' & type == 'ir') {
           model %>%
             saveRDS(paste('../Models/GLARMA_Pois_IR/model_', resp, '.rds', 
                           sep = ''))
-        } else if (dist == 'poisson' & type == 'wr') {
+        } else if (dist == 'Poi' & type == 'wr') {
           model %>%
             saveRDS(paste('../Models/GLARMA_Pois_WR/model_', resp, '.rds', 
                           sep = ''))
-        } else if (dist == 'nbinom' & type == 'ir') {
+        } else if (dist == 'NegBin' & type == 'ir') {
           model %>%
             saveRDS(paste('../Models/GLARMA_NBinom_IR/model_', resp, '.rds', 
                           sep = ''))    
@@ -347,7 +349,11 @@ fitOpt <- function(predictors, tuned, dist, type) {
         
         y_pred <- rep(NA, nrow(valid_df))
         
-        model <- glarma(train_df[, 1], as.matrix(train_df[, -1]), phiLags = 1:p, thetaLags = q)
+        model <- glarma(train_df[, 1], 
+                        as.matrix(train_df[, -1]), 
+                        phiLags = 1:p, 
+                        thetaLags = q,
+                        type = dist)
         
         for (t in 1:nrow(valid_df)) {
           newYs <- rep(NA, R)
@@ -360,7 +366,9 @@ fitOpt <- function(predictors, tuned, dist, type) {
           
           model <- glarma(c(train_df[, 1], valid_pred[t, 1]), 
                           as.matrix(rbind(train_df[, -1], valid_df[t, ])), 
-                          phiLags = 1:5, thetaLags = 6)
+                          phiLags = 1:5, 
+                          thetaLags = 6,
+                          type = dist)
         }
         
         mse <- mean((y_pred - valid_pred[, 1])^2, na.rm = TRUE)
@@ -422,13 +430,13 @@ getCoefs <- function(predictors, dist, type) {
     # import trained optimal models
     tryCatch(
       {
-        if (dist == 'poisson' & type == 'ir') {
+        if (dist == 'Poi' & type == 'ir') {
           model <- readRDS(paste('../Models/GLARMA_Pois_IR/model_', resp, 
                                  '.rds', sep = ''))
-        } else if (dist == 'poisson' & type =='wr') {
+        } else if (dist == 'Poi' & type =='wr') {
           model <- readRDS(paste('../Models/GLARMA_Pois_WR/model_', resp, 
                                  '.rds', sep = ''))
-        } else if (dist == 'nbinom' & type == 'ir') {
+        } else if (dist == 'NegBin' & type == 'ir') {
           model <- readRDS(paste('../Models/GLARMA_NBinom_IR/model_', resp, 
                                  '.rds', sep = ''))
         } else {
@@ -461,13 +469,13 @@ getCoefs <- function(predictors, dist, type) {
     }
   }
   
-  if (dist == 'poisson' & type == 'ir') {
+  if (dist == 'Poi' & type == 'ir') {
     coefs %>%
       saveRDS('../Optimize/GLARMA_Pois_IR/coefs.RData')
-  } else if (dist == 'poisson' & type == 'wr') {
+  } else if (dist == 'Poi' & type == 'wr') {
     coefs %>%
       saveRDS('../Optimize/GLARMA_Pois_WR/coefs.RData')
-  } else if (dist == 'nbinom' & type == 'ir') {
+  } else if (dist == 'NegBin' & type == 'ir') {
     coefs %>%
       saveRDS('../Optimize/GLARMA_NBinom_IR/coefs.RData')
   } else {
