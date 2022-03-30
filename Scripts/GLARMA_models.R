@@ -508,10 +508,10 @@ tryCatch(
       saveRDS('../Optimize/GLARMA_Pois_IR/predictors.RData')
     tuned %>%
       saveRDS('../Optimize/GLARMA_Pois_IR/tuned.RData')
-    var_select_mses %>%
-      saveRDS('../Optimize/GLARMA_Pois_IR/varSelectMSE.RData')
-    model_tune_mses %>%
-      saveRDS('../Optimize/GLARMA_Pois_IR/modelTuneMSE.RData')
+    var_select_aics %>%
+      saveRDS('../Optimize/GLARMA_Pois_IR/varSelectAIC.RData')
+    model_tune_aics %>%
+      saveRDS('../Optimize/GLARMA_Pois_IR/modelTuneAIC.RData')
     
     test_mses <- fitOpt(predictors, tuned, dist, type)
     
@@ -546,10 +546,10 @@ tryCatch(
       saveRDS('../Optimize/GLARMA_Pois_WR/predictors.RData')
     tuned %>%
       saveRDS('../Optimize/GLARMA_Pois_WR/tuned.RData')
-    var_select_mses %>%
-      saveRDS('../Optimize/GLARMA_Pois_WR/varSelectMSE.RData')
-    model_tune_mses %>%
-      saveRDS('../Optimize/GLARMA_Pois_WR/modelTuneMSE.RData')
+    var_select_aics %>%
+      saveRDS('../Optimize/GLARMA_Pois_WR/varSelectAIC.RData')
+    model_tune_aics %>%
+      saveRDS('../Optimize/GLARMA_Pois_WR/modelTuneAIC.RData')
     
     test_mses <- fitOpt(predictors, tuned, dist, type)
     
@@ -565,79 +565,79 @@ tryCatch(
   }
 )
 
-# fit Negative Binomial inter-region models
-print('Fitting Negative Binomial inter-region models...')
-tryCatch(
-  {
-    dist <- 'NegBin'
-    type <- 'ir'
-    
-    start <- Sys.time()
-    
-    # collect optimal predictor subsets
-    predictors <- var_select(5, start, dist, type)
-    
-    # find optimal model parameters
-    tuned <- model_tune(5, 5, predictors, start, dist)
-    
-    # save results
-    predictors %>%
-      saveRDS('../Optimize/GLARMA_NBinom_IR/predictors.RData')
-    tuned %>%
-      saveRDS('../Optimize/GLARMA_NBinom_IR/tuned.RData')
-    var_select_mses %>%
-      saveRDS('../Optimize/GLARMA_NBinom_IR/varSelectMSE.RData')
-    model_tune_mses %>%
-      saveRDS('../Optimize/GLARMA_NBinom_IR/modelTuneMSE.RData')
-    
-    test_mses <- fitOpt(predictors, tuned, dist, type)
-    
-    test_mses %>%
-      saveRDS('../Optimize/GLARMA_NBinom_IR/test_mses.RData')
-    
-    coefs <- getCoefs(predictors, dist, type)
-    
-    print(paste('Completed after', 
-                difftime(Sys.time(), start, unit = 'mins'), 'minutes'))
-  }, error = function(err) {
-    print(paste('Error fitting Negative Binomial inter-region models:', err))
-  }
-)
-
-# fit Negative Binomial within-region models
-print('Fitting Negative Binomial within-region models...')
-tryCatch(
-  {
-    type <- 'wr'
-    
-    start <- Sys.time()
-    
-    # collect optimal predictor subsets
-    predictors <- var_select(5, start, dist, type)
-    
-    # find optimal model parameters
-    tuned <- model_tune(5, 5, predictors, start, dist)
-    
-    # save results
-    predictors %>%
-      saveRDS('../Optimize/GLARMA_NBinom_WR/predictors.RData')
-    tuned %>%
-      saveRDS('../Optimize/GLARMA_NBinom_WR/tuned.RData')
-    var_select_mses %>%
-      saveRDS('../Optimize/GLARMA_NBinom_WR/varSelectMSE.RData')
-    model_tune_mses %>%
-      saveRDS('../Optimize/GLARMA_NBinom_WR/modelTuneMSE.RData')
-    
-    test_mses <- fitOpt(predictors, tuned, dist, type)
-    
-    test_mses %>%
-      saveRDS('../Optimize/GLARMA_NBinom_WR/test_mses.RData')
-    
-    coefs <- getCoefs(predictors, dist, type)
-    
-    print(paste('Completed after', 
-                difftime(Sys.time(), start, unit = 'mins'), 'minutes'))
-  }, error = function(err) {
-    print(paste('Error fitting Negative Binomial within-region models:', err))
-  }
-)
+# # fit Negative Binomial inter-region models
+# print('Fitting Negative Binomial inter-region models...')
+# tryCatch(
+#   {
+#     dist <- 'NegBin'
+#     type <- 'ir'
+#     
+#     start <- Sys.time()
+#     
+#     # collect optimal predictor subsets
+#     predictors <- var_select(5, start, dist, type)
+#     
+#     # find optimal model parameters
+#     tuned <- model_tune(5, 5, predictors, start, dist)
+#     
+#     # save results
+#     predictors %>%
+#       saveRDS('../Optimize/GLARMA_NBinom_IR/predictors.RData')
+#     tuned %>%
+#       saveRDS('../Optimize/GLARMA_NBinom_IR/tuned.RData')
+#     var_select_aics %>%
+#       saveRDS('../Optimize/GLARMA_NBinom_IR/varSelectAIC.RData')
+#     model_tune_aics %>%
+#       saveRDS('../Optimize/GLARMA_NBinom_IR/modelTuneAIC.RData')
+#     
+#     test_mses <- fitOpt(predictors, tuned, dist, type)
+#     
+#     test_mses %>%
+#       saveRDS('../Optimize/GLARMA_NBinom_IR/test_mses.RData')
+#     
+#     coefs <- getCoefs(predictors, dist, type)
+#     
+#     print(paste('Completed after', 
+#                 difftime(Sys.time(), start, unit = 'mins'), 'minutes'))
+#   }, error = function(err) {
+#     print(paste('Error fitting Negative Binomial inter-region models:', err))
+#   }
+# )
+# 
+# # fit Negative Binomial within-region models
+# print('Fitting Negative Binomial within-region models...')
+# tryCatch(
+#   {
+#     type <- 'wr'
+#     
+#     start <- Sys.time()
+#     
+#     # collect optimal predictor subsets
+#     predictors <- var_select(5, start, dist, type)
+#     
+#     # find optimal model parameters
+#     tuned <- model_tune(5, 5, predictors, start, dist)
+#     
+#     # save results
+#     predictors %>%
+#       saveRDS('../Optimize/GLARMA_NBinom_WR/predictors.RData')
+#     tuned %>%
+#       saveRDS('../Optimize/GLARMA_NBinom_WR/tuned.RData')
+#     var_select_aics %>%
+#       saveRDS('../Optimize/GLARMA_NBinom_WR/varSelectAIC.RData')
+#     model_tune_aics %>%
+#       saveRDS('../Optimize/GLARMA_NBinom_WR/modelTuneAIC.RData')
+#     
+#     test_mses <- fitOpt(predictors, tuned, dist, type)
+#     
+#     test_mses %>%
+#       saveRDS('../Optimize/GLARMA_NBinom_WR/test_mses.RData')
+#     
+#     coefs <- getCoefs(predictors, dist, type)
+#     
+#     print(paste('Completed after', 
+#                 difftime(Sys.time(), start, unit = 'mins'), 'minutes'))
+#   }, error = function(err) {
+#     print(paste('Error fitting Negative Binomial within-region models:', err))
+#   }
+# )
