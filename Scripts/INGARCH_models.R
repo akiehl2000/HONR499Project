@@ -126,6 +126,7 @@ var_select <- function(select, start, dist, type) {
   # select: the maximum number of predictor variables to model on
   # start: the start time of the model tuning procedure
   # dist: the assumed distribution for the marginal time series process
+  # type: 'ir' or 'wr' for inter-region or within-region fitting
   
   working <- TRUE
   
@@ -287,6 +288,7 @@ fitOpt <- function(predictors, tuned, dist, type) {
   # predictors: a list of optimal predictor sets for each response
   # tuned: a data frame of optimal model parameters for each response
   # dist: the assumed distribution for the marginal time series process
+  # type: 'ir' or 'wr' for inter-region or within-region fitting
   
   test_mses <- data.frame(resp = resp_names,
                           mse = rep(NA, length(resp_names)))
@@ -360,6 +362,7 @@ fitOpt <- function(predictors, tuned, dist, type) {
 getCoefs <- function(predictors, dist, type) {
   # predictors: a list of optimal predictor sets for each response
   # dist: the assumed distribution for the marginal time series process
+  # type: 'ir' or 'wr' for inter-region or within-region fitting
   
   working <- TRUE 
   
@@ -565,10 +568,12 @@ tryCatch(
     model_tune_mses %>%
       saveRDS('../Optimize/INGARCH_NBinom_IR/modelTuneMSE.RData')
     
-    test_mses <- fitOpt(predictors, tuned, dist)
+    test_mses <- fitOpt(predictors, tuned, dist, type)
     
     test_mses %>%
       saveRDS('../Optimize/INGARCH_NBinom_IR/test_mses.RData')
+    
+    coefs <- getCoefs(predictors, dist, type)
     
     print(paste('Completed after', 
                 difftime(Sys.time(), start, unit = 'mins'), 'minutes'))
@@ -605,6 +610,8 @@ tryCatch(
     
     test_mses %>%
       saveRDS('../Optimize/INGARCH_NBinom_WR/test_mses.RData')
+    
+    coefs <- getCoefs(predictors, dist, type)
     
     print(paste('Completed after', 
                 difftime(Sys.time(), start, unit = 'mins'), 'minutes'))
