@@ -4,7 +4,8 @@
 
 # install packages
 library(tidyverse)
-install.packages('tscount', repos = 'http://cran.us.r-project.org')
+install.packages('tscount', repos = 'http://cran.us.r-project.org', 
+                 INSTALL_opts = '--no-lock')
 library(tscount)
 
 # set seed for reproducibility

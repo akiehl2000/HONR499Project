@@ -5,7 +5,7 @@
 # install packages
 library(tidyverse)
 install.packages('glarma', repos = 'http://cran.us.r-project.org')
-library(tscount)
+library(glarma)
 
 # set seed for reproducibility
 set.seed(499)
