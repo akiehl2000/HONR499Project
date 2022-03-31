@@ -337,6 +337,14 @@ fitOpt <- function(predictors, tuned, dist, type) {
         }
       }, 
       error = function(err) {
+        p <- p + 1
+        q <- q + 1
+        model <- glarma(train_df[, 1],
+                        as.matrix(train_df[, -1]),
+                        phiLags = 1:p,
+                        thetaLags = q, 
+                        type = dist)
+        
         print(paste('Model fitting error on optimal ', resp, ': ', err, 
                     sep = ''))
       }
@@ -364,8 +372,8 @@ fitOpt <- function(predictors, tuned, dist, type) {
           
           model <- glarma(c(train_df[, 1], valid_pred[t, 1]), 
                           as.matrix(rbind(train_df[, -1], valid_df[t, ])), 
-                          phiLags = 1:5, 
-                          thetaLags = 6,
+                          phiLags = 1:p, 
+                          thetaLags = q,
                           type = dist)
         }
         
@@ -523,7 +531,7 @@ tryCatch(
     predictors <- var_select(5, start, dist, type)
     
     # find optimal model parameters
-    tuned <- model_tune(5, 5, predictors, start, dist)
+    tuned <- model_tune(5, 6, predictors, start, dist)
     
     # save results
     predictors %>%
@@ -561,7 +569,7 @@ tryCatch(
     predictors <- var_select(5, start, dist, type)
     
     # find optimal model parameters
-    tuned <- model_tune(5, 5, predictors, start, dist)
+    tuned <- model_tune(5, 6, predictors, start, dist)
     
     # save results
     predictors %>%
