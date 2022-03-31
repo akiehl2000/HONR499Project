@@ -359,34 +359,61 @@ getCoefs <- function(predictors, dist, type) {
   working <- TRUE
   
   # define empty data frame to store coefficients
-  coefs <- data.frame(resp = resp_names,
-                      beta_1 = rep(NA, 15),
-                      beta_2 = rep(NA, 15),
-                      beta_3 = rep(NA, 15),
-                      beta_4 = rep(NA, 15),
-                      beta_5 = rep(NA, 15),
-                      CA3.1 = rep(NA, 15),
-                      CA3.2 = rep(NA, 15),
-                      CA3.3 = rep(NA, 15),
-                      CA3.4 = rep(NA, 15),
-                      CA3.5 = rep(NA, 15),
-                      CA3.6 = rep(NA, 15),
-                      CA3.7 = rep(NA, 15),
-                      CA3.8 = rep(NA, 15),
-                      CA3.9 = rep(NA, 15),
-                      CA3.10 = rep(NA, 15),
-                      CA3.11 = rep(NA, 15),
-                      CA3.12 = rep(NA, 15),
-                      CA3.13 = rep(NA, 15),
-                      CA3.14 = rep(NA, 15),
-                      CA3.15 = rep(NA, 15),
-                      CA3.16 = rep(NA, 15),
-                      CA3.17 = rep(NA, 15),
-                      CA3.18 = rep(NA, 15),
-                      CA3.19 = rep(NA, 15),
-                      CA3.20 = rep(NA, 15),
-                      CA3.21 = rep(NA, 15),
-                      trial = rep(NA, 15))
+  if (type == 'ir') {
+    coefs <- data.frame(resp = resp_names,
+                        beta_1 = rep(NA, 15),
+                        beta_2 = rep(NA, 15),
+                        beta_3 = rep(NA, 15),
+                        beta_4 = rep(NA, 15),
+                        beta_5 = rep(NA, 15),
+                        alpha = rep(NA, 15),
+                        CA3.1 = rep(NA, 15),
+                        CA3.2 = rep(NA, 15),
+                        CA3.3 = rep(NA, 15),
+                        CA3.4 = rep(NA, 15),
+                        CA3.5 = rep(NA, 15),
+                        CA3.6 = rep(NA, 15),
+                        CA3.7 = rep(NA, 15),
+                        CA3.8 = rep(NA, 15),
+                        CA3.9 = rep(NA, 15),
+                        CA3.10 = rep(NA, 15),
+                        CA3.11 = rep(NA, 15),
+                        CA3.12 = rep(NA, 15),
+                        CA3.13 = rep(NA, 15),
+                        CA3.14 = rep(NA, 15),
+                        CA3.15 = rep(NA, 15),
+                        CA3.16 = rep(NA, 15),
+                        CA3.17 = rep(NA, 15),
+                        CA3.18 = rep(NA, 15),
+                        CA3.19 = rep(NA, 15),
+                        CA3.20 = rep(NA, 15),
+                        CA3.21 = rep(NA, 15),
+                        trial = rep(NA, 15))
+  } else {
+    coefs <- data.frame(resp = resp_names,
+                        beta_1 = rep(NA, 15),
+                        beta_2 = rep(NA, 15),
+                        beta_3 = rep(NA, 15),
+                        beta_4 = rep(NA, 15),
+                        beta_5 = rep(NA, 15),
+                        alpha = rep(NA, 15),
+                        CA1.1 = rep(NA, 15),
+                        CA1.2 = rep(NA, 15),
+                        CA1.3 = rep(NA, 15),
+                        CA1.4 = rep(NA, 15),
+                        CA1.5 = rep(NA, 15),
+                        CA1.6 = rep(NA, 15),
+                        CA1.7 = rep(NA, 15),
+                        CA1.8 = rep(NA, 15),
+                        CA1.9 = rep(NA, 15),
+                        CA1.10 = rep(NA, 15),
+                        CA1.11 = rep(NA, 15),
+                        CA1.12 = rep(NA, 15),
+                        CA1.13 = rep(NA, 15),
+                        CA1.14 = rep(NA, 15),
+                        CA1.15 = rep(NA, 15),
+                        trial = rep(NA, 15))
+  }
   
   # loop through response variables
   for (resp in resp_names) {
@@ -416,24 +443,30 @@ getCoefs <- function(predictors, dist, type) {
     
     # collect model coefficient estimates
     if (working == TRUE & !is.null(predictors[[resp]])) {
-      model_sum <- summary(model)
-      rowNms <- rownames(model_sum$coefficients)
-      model_sum <- model_sum$coefficients$Estimate
-      
-      if (dist == 'poisson') {
-        est <- model_sum[-1]
-      } else {
-        est <- model_sum[-c(1, length(model_sum))]
-      }
-      
-      nms <- rowNms[which(
-        !grepl('var', rowNms) & 
-          !grepl('Intercept', rowNms) & 
-          !grepl('sigma', rowNms) &
-          !grepl('trial', rowNms))]
-      nms <- c(nms, predictors[[resp]], 'trial')
-      
-      coefs[which(coefs$resp == resp), nms] <- abs(est)
+      tryCatch (
+        {
+          model_sum <- summary(model)
+          rowNms <- rownames(model_sum$coefficients)
+          model_sum <- model_sum$coefficients$Estimate
+          
+          if (dist == 'poisson') {
+            est <- model_sum[-1]
+          } else {
+            est <- model_sum[-c(1, length(model_sum))]
+          }
+          
+          nms <- rowNms[which(
+            !grepl('var', rowNms) & 
+              !grepl('Intercept', rowNms) & 
+              !grepl('sigma', rowNms) &
+              !grepl('trial', rowNms))]
+          nms <- c(nms, as.character(predictors[[resp]]), 'trial')
+          
+          coefs[which(coefs$resp == resp), nms] <- abs(est)
+        }, error = function(err) {
+          print(paste('Model evaluation error for ', resp, ':', err, sep = ''))
+        }
+      )
     }
   }
   

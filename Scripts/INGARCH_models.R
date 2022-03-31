@@ -367,36 +367,62 @@ getCoefs <- function(predictors, dist, type) {
   working <- TRUE 
   
   # define empty data frame to store coefficients
-  coefs <- data.frame(resp = resp_names,
-                      beta_1 = rep(NA, 15),
-                      beta_2 = rep(NA, 15),
-                      beta_3 = rep(NA, 15),
-                      beta_4 = rep(NA, 15),
-                      beta_5 = rep(NA, 15),
-                      alpha = rep(NA, 15),
-                      CA3.1 = rep(NA, 15),
-                      CA3.2 = rep(NA, 15),
-                      CA3.3 = rep(NA, 15),
-                      CA3.4 = rep(NA, 15),
-                      CA3.5 = rep(NA, 15),
-                      CA3.6 = rep(NA, 15),
-                      CA3.7 = rep(NA, 15),
-                      CA3.8 = rep(NA, 15),
-                      CA3.9 = rep(NA, 15),
-                      CA3.10 = rep(NA, 15),
-                      CA3.11 = rep(NA, 15),
-                      CA3.12 = rep(NA, 15),
-                      CA3.13 = rep(NA, 15),
-                      CA3.14 = rep(NA, 15),
-                      CA3.15 = rep(NA, 15),
-                      CA3.16 = rep(NA, 15),
-                      CA3.17 = rep(NA, 15),
-                      CA3.18 = rep(NA, 15),
-                      CA3.19 = rep(NA, 15),
-                      CA3.20 = rep(NA, 15),
-                      CA3.21 = rep(NA, 15),
-                      trial = rep(NA, 15))
-  
+  if (type == 'ir') {
+    coefs <- data.frame(resp = resp_names,
+                        beta_1 = rep(NA, 15),
+                        beta_2 = rep(NA, 15),
+                        beta_3 = rep(NA, 15),
+                        beta_4 = rep(NA, 15),
+                        beta_5 = rep(NA, 15),
+                        alpha = rep(NA, 15),
+                        CA3.1 = rep(NA, 15),
+                        CA3.2 = rep(NA, 15),
+                        CA3.3 = rep(NA, 15),
+                        CA3.4 = rep(NA, 15),
+                        CA3.5 = rep(NA, 15),
+                        CA3.6 = rep(NA, 15),
+                        CA3.7 = rep(NA, 15),
+                        CA3.8 = rep(NA, 15),
+                        CA3.9 = rep(NA, 15),
+                        CA3.10 = rep(NA, 15),
+                        CA3.11 = rep(NA, 15),
+                        CA3.12 = rep(NA, 15),
+                        CA3.13 = rep(NA, 15),
+                        CA3.14 = rep(NA, 15),
+                        CA3.15 = rep(NA, 15),
+                        CA3.16 = rep(NA, 15),
+                        CA3.17 = rep(NA, 15),
+                        CA3.18 = rep(NA, 15),
+                        CA3.19 = rep(NA, 15),
+                        CA3.20 = rep(NA, 15),
+                        CA3.21 = rep(NA, 15),
+                        trial = rep(NA, 15))
+  } else {
+    coefs <- data.frame(resp = resp_names,
+                        beta_1 = rep(NA, 15),
+                        beta_2 = rep(NA, 15),
+                        beta_3 = rep(NA, 15),
+                        beta_4 = rep(NA, 15),
+                        beta_5 = rep(NA, 15),
+                        alpha = rep(NA, 15),
+                        CA1.1 = rep(NA, 15),
+                        CA1.2 = rep(NA, 15),
+                        CA1.3 = rep(NA, 15),
+                        CA1.4 = rep(NA, 15),
+                        CA1.5 = rep(NA, 15),
+                        CA1.6 = rep(NA, 15),
+                        CA1.7 = rep(NA, 15),
+                        CA1.8 = rep(NA, 15),
+                        CA1.9 = rep(NA, 15),
+                        CA1.10 = rep(NA, 15),
+                        CA1.11 = rep(NA, 15),
+                        CA1.12 = rep(NA, 15),
+                        CA1.13 = rep(NA, 15),
+                        CA1.14 = rep(NA, 15),
+                        CA1.15 = rep(NA, 15),
+                        trial = rep(NA, 15))
+  }
+
   # loop through response variables
   for (resp in resp_names) {
     working <- TRUE
@@ -407,7 +433,7 @@ getCoefs <- function(predictors, dist, type) {
         if (dist == 'poisson' & type == 'ir') {
           model <- readRDS(paste('../Models/INGARCH_Pois_IR/model_', resp, 
                                  '.rds', sep = ''))
-        } else if (dist == 'poisson' & type =='wr') {
+        } else if (dist == 'poisson' & type == 'wr') {
           model <- readRDS(paste('../Models/INGARCH_Pois_WR/model_', resp, 
                                  '.rds', sep = ''))
         } else if (dist == 'nbinom' & type == 'ir') {
@@ -441,8 +467,8 @@ getCoefs <- function(predictors, dist, type) {
           !grepl('sigma', rowNms) &
           !grepl('trial', rowNms))]
       nms[which(grepl('alpha', nms))] <- 'alpha'
-      nms <- c(nms, predictors[[resp]], 'trial')
-      
+      nms <- c(nms, as.character(predictors[[resp]]), 'trial')
+
       coefs[which(coefs$resp == resp), nms] <- abs(est)
     }
   }
