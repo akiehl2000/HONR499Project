@@ -1,0 +1,5 @@
+[1] "Fitting Negative Binomial within-region models..."
+[1] "Beginning variable selection for: CA1.1"
+[1] "Model fitting error for CA1.1 full model: Error in match.arg(distr): 'arg' must be NULL or a character vector\n"
+[1] "Model evaluation error for CA1.1 full model: Error in summary(model): object 'model' not found\n"
+[1] "Error fitting Negative Binomial within-region models: Error in var_select(5, start, dist, type): object 'full_model_select' not found\n"
