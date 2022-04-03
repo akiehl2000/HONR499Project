@@ -170,12 +170,13 @@ var_select <- function(select, start, dist, type) {
     tryCatch(
       {
         # extract estimated coefficients from fitted model
-        model_sum <- summary(model)$coefficients$Estimate
+        model_sum <- summary(model)$coefficients
+        ests <- model_sum$Estimate
         
-        if (dist == 'poisson') {
-          est <- model_sum[-c(1:6, length(model_sum))]
+        if (rownames(model_sum)[length(rownames(model_sum))] == 'trial') {
+          est <- ests[-c(1:6, length(ests))]
         } else{
-          est <- model_sum[-c(1:6, length(model_sum) - 1, length(model_sum))]
+          est <- ests[-c(1:6, length(ests) - 1, length(ests))]
         }
         
         if (type == 'ir') {
@@ -366,7 +367,6 @@ getCoefs <- function(predictors, dist, type) {
                         beta_3 = rep(NA, 15),
                         beta_4 = rep(NA, 15),
                         beta_5 = rep(NA, 15),
-                        alpha = rep(NA, 15),
                         CA3.1 = rep(NA, 15),
                         CA3.2 = rep(NA, 15),
                         CA3.3 = rep(NA, 15),
@@ -396,7 +396,6 @@ getCoefs <- function(predictors, dist, type) {
                         beta_3 = rep(NA, 15),
                         beta_4 = rep(NA, 15),
                         beta_5 = rep(NA, 15),
-                        alpha = rep(NA, 15),
                         CA1.1 = rep(NA, 15),
                         CA1.2 = rep(NA, 15),
                         CA1.3 = rep(NA, 15),
@@ -495,15 +494,15 @@ tryCatch(
   {
     dist <- 'poisson'
     type <- 'ir'
-    
+
     start <- Sys.time()
-    
+
     # collect optimal predictor subsets
     predictors <- var_select(5, start, dist, type)
-    
+
     # find optimal model parameters
     tuned <- model_tune(5, predictors, start, dist)
-    
+
     # save results
     predictors %>%
       saveRDS('../Optimize/GLAR_Pois_IR/predictors.RData')
@@ -513,15 +512,15 @@ tryCatch(
       saveRDS('../Optimize/GLAR_Pois_IR/varSelectMSE.RData')
     model_tune_mses %>%
       saveRDS('../Optimize/GLAR_Pois_IR/modelTuneMSE.RData')
-    
+
     test_mses <- fitOpt(predictors, tuned, dist, type)
-    
+
     test_mses %>%
       saveRDS('../Optimize/GLAR_Pois_IR/test_mses.RData')
-    
+
     coefs <- getCoefs(predictors, dist, type)
-    
-    print(paste('Completed after', 
+
+    print(paste('Completed after',
                 difftime(Sys.time(), start, unit = 'mins'), 'minutes'))
   }, error = function(err) {
     print(paste('Error fitting Poisson inter-region models:', err))
@@ -533,15 +532,15 @@ print('Fitting Poisson within-region models...')
 tryCatch(
   {
     type <- 'wr'
-    
+
     start <- Sys.time()
-    
+
     # collect optimal predictor subsets
     predictors <- var_select(5, start, dist, type)
-    
+
     # find optimal model parameters
     tuned <- model_tune(5, predictors, start, dist)
-    
+
     # save results
     predictors %>%
       saveRDS('../Optimize/GLAR_Pois_WR/predictors.RData')
@@ -551,15 +550,15 @@ tryCatch(
       saveRDS('../Optimize/GLAR_Pois_WR/varSelectMSE.RData')
     model_tune_mses %>%
       saveRDS('../Optimize/GLAR_Pois_WR/modelTuneMSE.RData')
-    
+
     test_mses <- fitOpt(predictors, tuned, dist, type)
-    
+
     test_mses %>%
       saveRDS('../Optimize/GLAR_Pois_WR/test_mses.RData')
-    
+
     coefs <- getCoefs(predictors, dist, type)
-    
-    print(paste('Completed after', 
+
+    print(paste('Completed after',
                 difftime(Sys.time(), start, unit = 'mins'), 'minutes'))
   }, error = function(err) {
     print(paste('Error fitting Poisson within-region models:', err))
@@ -572,15 +571,15 @@ tryCatch(
   {
     dist <- 'nbinom'
     type <- 'ir'
-    
+
     start <- Sys.time()
-    
+
     # collect optimal predictor subsets
     predictors <- var_select(5, start, dist, type)
-    
+
     # find optimal model parameters
     tuned <- model_tune(5, predictors, start, dist)
-    
+
     # save results
     predictors %>%
       saveRDS('../Optimize/GLAR_NBinom_IR/predictors.RData')
@@ -590,15 +589,15 @@ tryCatch(
       saveRDS('../Optimize/GLAR_NBinom_IR/varSelectMSE.RData')
     model_tune_mses %>%
       saveRDS('../Optimize/GLAR_NBinom_IR/modelTuneMSE.RData')
-    
+
     test_mses <- fitOpt(predictors, tuned, dist, type)
-    
+
     test_mses %>%
       saveRDS('../Optimize/GLAR_NBinom_IR/test_mses.RData')
-    
+
     coefs <- getCoefs(predictors, dist, type)
-    
-    print(paste('Completed after', 
+
+    print(paste('Completed after',
                 difftime(Sys.time(), start, unit = 'mins'), 'minutes'))
   }, error = function(err) {
     print(paste('Error fitting Negative Binomial inter-region models:', err))
@@ -609,6 +608,7 @@ tryCatch(
 print('Fitting Negative Binomial within-region models...')
 tryCatch(
   {
+    dist <- 'nbinom'
     type <- 'wr'
     
     start <- Sys.time()
