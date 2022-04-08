@@ -704,6 +704,15 @@ tryCatch(
 )
 ```
 
+```{r}
+remove(predictors)
+remove(var_select_mses)
+remove(tuned)
+remove(model_tune_mses)
+remove(coefs)
+remove(test_mses)
+```
+
 Fit negative binomial within-region models:
 ```{r}
 print('Fitting Negative Binomial within-region models...')
@@ -742,6 +751,15 @@ tryCatch(
     print(paste('Error fitting Negative Binomial within-region models:', err))
   }
 )
+```
+
+```{r}
+remove(predictors)
+remove(var_select_mses)
+remove(tuned)
+remove(model_tune_mses)
+remove(coefs)
+remove(test_mses)
 ```
 
 # Testing Area
