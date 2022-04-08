@@ -179,11 +179,12 @@ cross_valid <- function(pred_list, resp, p, q, dist) {
 A function for performing variable selection on the GLARMA model using a 
 forward selection technique based on the effect sizes from the full model. 
 ```{r var-select}
-var_select <- function(select, start, dist) {
+var_select <- function(select, start, dist, type) {
   # select: the maximum number of predictor variables to model on
   # start: the start time of the model tuning procedure
   # dist: the assumed distribution for the marginal time series process
-
+  # type: 'ir' or 'wr' for inter-region or within-region fitting
+  
   working <- TRUE
   
   # define empty list to store best variable subsets
@@ -196,17 +197,25 @@ var_select <- function(select, start, dist) {
     working <- TRUE
     
     # collect training data frame
-    dfs <- gen_df(trls[1:5], trls[6:10], pred_names, resp)
-    train_df <- dfs[['train_df']]
-    remove(dfs)
-  
+    if (type == 'ir') {
+      dfs <- gen_df(trls[1:5], trls[6:10], pred_names, resp)
+      train_df <- dfs[['train_df']]
+      remove(dfs)
+    } else {
+      dfs <- gen_df(trls[1:5], trls[6:10], 
+                    resp_names[-which(resp_names == resp)], resp)
+      train_df <- dfs[['train_df']]
+      remove(dfs)
+    }
+    
     tryCatch(
       {
         # fit full model
         model <- glarma(train_df[, 1],
                         as.matrix(train_df[, -1]), 
                         phiLags = 1:5,
-                        thetaLags = 6)
+                        thetaLags = 6, 
+                        type = dist)
       }, 
       error = function(err) {
         working <- FALSE
@@ -220,18 +229,25 @@ var_select <- function(select, start, dist) {
         # extract estimated coefficients from fitted model
         model_sum <- summary(model)$coefficients1$Estimate
         
-        if (dist == 'poisson') {
+        if (dist == 'Poi') {
           est <- model_sum[-length(model_sum)]
         } else{
           est <- model_sum[-c(1:6, length(model_sum) - 1, length(model_sum))]
         }
         
-        full_model_select <- data.frame(var = pred_names, coef = est) %>%
-          arrange(desc(abs(coef))) %>%
-          top_n(select, coef) %>%
-          select(var) %>%
-          unlist()
-        
+        if (type == 'ir') {
+          full_model_select <- data.frame(var = pred_names, coef = est) %>%
+            arrange(desc(abs(coef))) %>%
+            top_n(select, coef) %>%
+            select(var) %>%
+            unlist()
+        } else {
+          full_model_select <- data.frame(var = resp_names[-which(resp_names == resp)], coef = est) %>%
+            arrange(desc(abs(coef))) %>%
+            top_n(select, coef) %>%
+            select(var) %>%
+            unlist()
+        }
       }, 
       error = function(err) {
         working <- FALSE
@@ -336,10 +352,11 @@ model_tune <- function(Pmax, Qmax, predictors, start, dist) {
 
 A function for fitting optimal models using selected predictors and parameters:
 ```{r fit-optimal}
-fitOpt <- function(predictors, tuned, dist) {
+fitOpt <- function(predictors, tuned, dist, type) {
   # predictors: a list of optimal predictor sets for each response
   # tuned: a data frame of optimal model parameters for each response
   # dist: the assumed distribution for the marginal time series process
+  # type: 'ir' or 'wr' for inter-region or within-region fitting
   
   test_mses <- data.frame(resp = resp_names,
                           mse = rep(NA, length(resp_names)))
@@ -364,19 +381,37 @@ fitOpt <- function(predictors, tuned, dist) {
         model <- glarma(train_df[, 1],
                         as.matrix(train_df[, -1]),
                         phiLags = 1:p,
-                        thetaLags = q)
+                        thetaLags = q, 
+                        type = dist)
         
-        if (dist == 'poisson') {
+        
+        if (dist == 'Poi' & type == 'ir') {
           model %>%
-            saveRDS(paste('../Models/GLARMA_Pois/model_', resp, '.rds', 
+            saveRDS(paste('../Models/GLARMA_Pois_IR/model_', resp, '.rds', 
                           sep = ''))
+        } else if (dist == 'Poi' & type == 'wr') {
+          model %>%
+            saveRDS(paste('../Models/GLARMA_Pois_WR/model_', resp, '.rds', 
+                          sep = ''))
+        } else if (dist == 'NegBin' & type == 'ir') {
+          model %>%
+            saveRDS(paste('../Models/GLARMA_NBinom_IR/model_', resp, '.rds', 
+                          sep = ''))    
         } else {
           model %>%
-            saveRDS(paste('../Models/GLARMA_NBinom/model_', resp, '.rds', 
+            saveRDS(paste('../Models/GLARMA_NBinom_WR/model_', resp, '.rds', 
                           sep = ''))    
         }
       }, 
       error = function(err) {
+        p <- p + 1
+        q <- q + 1
+        model <- glarma(train_df[, 1],
+                        as.matrix(train_df[, -1]),
+                        phiLags = 1:p,
+                        thetaLags = q, 
+                        type = dist)
+        
         print(paste('Model fitting error on optimal ', resp, ': ', err, 
                     sep = ''))
       }
@@ -389,7 +424,11 @@ fitOpt <- function(predictors, tuned, dist) {
         
         y_pred <- rep(NA, nrow(valid_df))
         
-        model <- glarma(train_df[, 1], as.matrix(train_df[, -1]), phiLags = 1:p, thetaLags = q)
+        model <- glarma(train_df[, 1], 
+                        as.matrix(train_df[, -1]), 
+                        phiLags = 1:p, 
+                        thetaLags = q,
+                        type = dist)
         
         for (t in 1:nrow(valid_df)) {
           newYs <- rep(NA, R)
@@ -398,11 +437,11 @@ fitOpt <- function(predictors, tuned, dist) {
           }
           y_pred[t] <- mean(newYs)
           
-          print(paste('Forecasting complete for time ', t, '...', sep = ''))
-          
           model <- glarma(c(train_df[, 1], valid_pred[t, 1]), 
                           as.matrix(rbind(train_df[, -1], valid_df[t, ])), 
-                          phiLags = 1:5, thetaLags = 6)
+                          phiLags = 1:p, 
+                          thetaLags = q,
+                          type = dist)
         }
         
         mse <- mean((y_pred - valid_pred[, 1])^2, na.rm = TRUE)
@@ -421,42 +460,67 @@ fitOpt <- function(predictors, tuned, dist) {
 
 A function for collecting estimated coefficients from saved optimal models:
 ```{r get-coefs}
-getCoefs <- function(predictors, dist) {
+getCoefs <- function(predictors, dist, type) {
   # predictors: a list of optimal predictor sets for each response
   # dist: the assumed distribution for the marginal time series process
+  # type: 'ir' or 'wr' for inter-region or within-region fitting
   
   working <- TRUE 
   
   # define empty data frame to store coefficients
-  coefs <- data.frame(resp = resp_names,
-                      phi_1 = rep(NA, 15),
-                      phi_2 = rep(NA, 15),
-                      phi_3 = rep(NA, 15),
-                      phi_4 = rep(NA, 15),
-                      phi_5 = rep(NA, 15),
-                      theta = rep(NA, 15),
-                      CA3.1 = rep(NA, 15),
-                      CA3.2 = rep(NA, 15),
-                      CA3.3 = rep(NA, 15),
-                      CA3.4 = rep(NA, 15),
-                      CA3.5 = rep(NA, 15),
-                      CA3.6 = rep(NA, 15),
-                      CA3.7 = rep(NA, 15),
-                      CA3.8 = rep(NA, 15),
-                      CA3.9 = rep(NA, 15),
-                      CA3.10 = rep(NA, 15),
-                      CA3.11 = rep(NA, 15),
-                      CA3.12 = rep(NA, 15),
-                      CA3.13 = rep(NA, 15),
-                      CA3.14 = rep(NA, 15),
-                      CA3.15 = rep(NA, 15),
-                      CA3.16 = rep(NA, 15),
-                      CA3.17 = rep(NA, 15),
-                      CA3.18 = rep(NA, 15),
-                      CA3.19 = rep(NA, 15),
-                      CA3.20 = rep(NA, 15),
-                      CA3.21 = rep(NA, 15),
-                      trial = rep(NA, 15))
+  if (type == 'ir') {
+    coefs <- data.frame(resp = resp_names,
+                        phi_1 = rep(NA, 15),
+                        phi_2 = rep(NA, 15),
+                        phi_3 = rep(NA, 15),
+                        phi_4 = rep(NA, 15),
+                        theta = rep(NA, 15),
+                        CA3.1 = rep(NA, 15),
+                        CA3.2 = rep(NA, 15),
+                        CA3.3 = rep(NA, 15),
+                        CA3.4 = rep(NA, 15),
+                        CA3.5 = rep(NA, 15),
+                        CA3.6 = rep(NA, 15),
+                        CA3.7 = rep(NA, 15),
+                        CA3.8 = rep(NA, 15),
+                        CA3.9 = rep(NA, 15),
+                        CA3.10 = rep(NA, 15),
+                        CA3.11 = rep(NA, 15),
+                        CA3.12 = rep(NA, 15),
+                        CA3.13 = rep(NA, 15),
+                        CA3.14 = rep(NA, 15),
+                        CA3.15 = rep(NA, 15),
+                        CA3.16 = rep(NA, 15),
+                        CA3.17 = rep(NA, 15),
+                        CA3.18 = rep(NA, 15),
+                        CA3.19 = rep(NA, 15),
+                        CA3.20 = rep(NA, 15),
+                        CA3.21 = rep(NA, 15),
+                        trial = rep(NA, 15))
+  } else {
+    coefs <- data.frame(resp = resp_names,
+                        phi_1 = rep(NA, 15),
+                        phi_2 = rep(NA, 15),
+                        phi_3 = rep(NA, 15),
+                        phi_4 = rep(NA, 15),
+                        theta = rep(NA, 15),
+                        CA1.1 = rep(NA, 15),
+                        CA1.2 = rep(NA, 15),
+                        CA1.3 = rep(NA, 15),
+                        CA1.4 = rep(NA, 15),
+                        CA1.5 = rep(NA, 15),
+                        CA1.6 = rep(NA, 15),
+                        CA1.7 = rep(NA, 15),
+                        CA1.8 = rep(NA, 15),
+                        CA1.9 = rep(NA, 15),
+                        CA1.10 = rep(NA, 15),
+                        CA1.11 = rep(NA, 15),
+                        CA1.12 = rep(NA, 15),
+                        CA1.13 = rep(NA, 15),
+                        CA1.14 = rep(NA, 15),
+                        CA1.15 = rep(NA, 15),
+                        trial = rep(NA, 15))
+  }
   
   # loop through response variables
   for (resp in resp_names) {
@@ -465,11 +529,17 @@ getCoefs <- function(predictors, dist) {
     # import trained optimal models
     tryCatch(
       {
-        if (dist == 'poisson') {
-          model <- readRDS(paste('../Models/GLARMA_Pois/model_', resp, '.rds',
-                                 sep = ''))
+        if (dist == 'Poi' & type == 'ir') {
+          model <- readRDS(paste('../Models/GLARMA_Pois_IR/model_', resp, 
+                                 '.rds', sep = ''))
+        } else if (dist == 'Poi' & type =='wr') {
+          model <- readRDS(paste('../Models/GLARMA_Pois_WR/model_', resp, 
+                                 '.rds', sep = ''))
+        } else if (dist == 'NegBin' & type == 'ir') {
+          model <- readRDS(paste('../Models/GLARMA_NBinom_IR/model_', resp, 
+                                 '.rds', sep = ''))
         } else {
-          model <- readRDS(paste('../Models/GLARMA_NBinom/model_', resp, 
+          model <- readRDS(paste('../Models/GLARMA_NBinom_WR/model_', resp, 
                                  '.rds', sep = ''))
         }
       }, 
@@ -485,25 +555,31 @@ getCoefs <- function(predictors, dist) {
                   rownames(model_sum$coefficients1))
       est <- c(model_sum$coefficients2$Estimate, 
                model_sum$coefficients1$Estimate)
-     
+      
       nms <- rowNms[which(
-          !grepl('var', rowNms) & 
+        !grepl('var', rowNms) & 
           !grepl('Intercept', rowNms) & 
           !grepl('sigma', rowNms) &
           !grepl('trial', rowNms))]
       nms[which(grepl('theta', nms))] <- 'theta'
-      nms <- c(nms, predictors[[resp]], 'trial')
-
+      nms <- c(nms, as.character(predictors[[resp]]), 'trial')
+      
       coefs[which(coefs$resp == resp), nms] <- est
     }
   }
   
-  if (dist == 'poisson') {
+  if (dist == 'Poi' & type == 'ir') {
     coefs %>%
-      saveRDS('../Optimize/GLARMA_Pois/coefs.RData')
+      saveRDS('../Optimize/GLARMA_Pois_IR/coefs.RData')
+  } else if (dist == 'Poi' & type == 'wr') {
+    coefs %>%
+      saveRDS('../Optimize/GLARMA_Pois_WR/coefs.RData')
+  } else if (dist == 'NegBin' & type == 'ir') {
+    coefs %>%
+      saveRDS('../Optimize/GLARMA_NBinom_IR/coefs.RData')
   } else {
     coefs %>%
-      saveRDS('../Optimize/GLARMA_NBinom/coefs.RData')
+      saveRDS('../Optimize/GLARMA_NBinom_WR/coefs.RData')
   }
   
   return(coefs)
@@ -512,64 +588,45 @@ getCoefs <- function(predictors, dist) {
 
 # Poisson Models
 
-Find optimal subset of predictors and model parameters for poisson model:
-```{r tune-poisson}
-dist <- 'poisson'
-
-# execute variable selection and model tuning
-start <- Sys.time()
-
-# collect optimal predictor subsets
-predictors <- var_select(5, start, dist)
-  
-# find optimal model parameters
-tuned <- model_tune(5, 6, predictors, start, dist)
-```
-
-Save optimized predictor subsets and parameters, and associated MSE values:
-```{r results-poisson}
-predictors %>%
-  saveRDS('../Optimize/GLARMA_Pois/predictors.RData')
-
-tuned %>%
-  saveRDS('../Optimize/GLARMA_Pois/tuned.RData')
-
-var_select_aics %>%
-  saveRDS('../Optimize/GLARMA_Pois/varSelectAIC.RData')
-
-model_tune_aics %>%
-  saveRDS('../Optimize/GLARMA_Pois/modelTuneAIC.RData')
-```
-
-Fit optimal poisson models using selected predictors and parameters:
-```{r fit-poisson}
-start <- Sys.time()
-
-test_mses <- fitOpt(predictors, tuned, dist)
-
-test_mses %>%
-  saveRDS('../Optimize/GLARMA_Pois/test_mses.RData')
-
-print(paste('Completed after', 
-            difftime(Sys.time(), start, unit = 'mins'), 'minutes'))
-```
-
-Collect and plot estimated coefficients from optimal poisson models:
-```{r plot-poisson}
-coefs <- getCoefs(predictors, dist)
-
-coefs %>%
-  pivot_longer(!resp, names_to = 'pred', values_to = 'est') %>%
-  ggplot() +
-  geom_tile(aes(factor(pred, levels = c('phi_1', 'phi_2', 'phi_3', 'phi_4', 
-                                        'phi_5', 'theta', pred_names, 
-                                        'trial')),
-                factor(resp, levels = resp_names), 
-                fill = as.numeric(est))) +
-  scale_fill_continuous() +
-  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +
-  labs(title='Poisson GLARMA Coefficient Estimates', 
-       x='Predictor', y='Response', fill='')
+Fit inter-region poisson models:
+```{r}
+print('Fitting Poisson inter-region models...')
+tryCatch(
+  {
+    dist <- 'Poi'
+    type <- 'ir'
+    
+    start <- Sys.time()
+    
+    # collect optimal predictor subsets
+    predictors <- var_select(5, start, dist, type)
+    
+    # find optimal model parameters
+    tuned <- model_tune(5, 6, predictors, start, dist)
+    
+    # save results
+    predictors %>%
+      saveRDS('../Optimize/GLARMA_Pois_IR/predictors.RData')
+    tuned %>%
+      saveRDS('../Optimize/GLARMA_Pois_IR/tuned.RData')
+    var_select_aics %>%
+      saveRDS('../Optimize/GLARMA_Pois_IR/varSelectAIC.RData')
+    model_tune_aics %>%
+      saveRDS('../Optimize/GLARMA_Pois_IR/modelTuneAIC.RData')
+    
+    test_mses <- fitOpt(predictors, tuned, dist, type)
+    
+    test_mses %>%
+      saveRDS('../Optimize/GLARMA_Pois_IR/test_mses.RData')
+    
+    coefs <- getCoefs(predictors, dist, type)
+    
+    print(paste('Completed after', 
+                difftime(Sys.time(), start, unit = 'mins'), 'minutes'))
+  }, error = function(err) {
+    print(paste('Error fitting Poisson inter-region models:', err))
+  }
+)
 ```
 
 ```{r}
@@ -581,67 +638,44 @@ remove(coefs)
 remove(test_mses)
 ```
 
-# Negative Binomial Models
-
-Find optimal subset of predictors and model parameters for negative binomial 
-model:
-```{r tune-nbinom}
-dist <- 'nbinom'
-
-# execute variable selection and model tuning
-start <- Sys.time()
-
-# collect optimal predictor subsets
-predictors <- var_select(5, start, dist)
-  
-# find optimal model parameters
-tuned <- model_tune(5, 5, predictors, start, dist)
-```
-
-Save optimized predictor subsets and parameters, and associated MSE values:
-```{r results-nbinom}
-predictors %>%
-  saveRDS('../Optimize/GLARMA_NBinom/predictors.RData')
-
-tuned %>%
-  saveRDS('../Optimize/GLARMA_NBinom/tuned.RData')
-
-var_select_aics %>%
-  saveRDS('../Optimize/GLARMA_NBinom/varSelectAIC.RData')
-
-model_tune_aics %>%
-  saveRDS('../Optimize/GLARMA_NBinom/modelTuneAIC.RData')
-```
-
-Fit optimal negative binomial models using selected predictors and parameters:
-```{r fit-nbinom}
-start <- Sys.time()
-
-test_mses <- fitOpt(predictors, tuned, dist)
-
-test_mses %>%
-  saveRDS('../Optimize/GLARMA_NBinom/test_mses.RData')
-
-print(paste('Completed after', 
-            difftime(Sys.time(), start, unit = 'mins'), 'minutes'))
-```
-
-Collect and plot estimated coefficients from optimal negative binomial models:
-```{r plot-nbinom}
-coefs <- getCoefs(predictors, dist)
-
-coefs %>%
-  pivot_longer(!resp, names_to = 'pred', values_to = 'est') %>%
-  ggplot() +
-  geom_tile(aes(factor(pred, levels = c('beta_1', 'beta_2', 'beta_3', 'beta_4', 
-                                        'beta_5', 'alpha', pred_names, 
-                                        'trial')),
-                factor(resp, levels = resp_names), 
-                fill = as.numeric(est))) +
-  scale_fill_continuous() +
-  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +
-  labs(title='Negative Binomial GLARMA Coefficient Estimates', 
-       x='Predictor', y='Response', fill='')
+Fit within-region poisson models:
+```{r}
+print('Fitting Poisson within-region models...')
+tryCatch(
+  {
+    type <- 'wr'
+    
+    start <- Sys.time()
+    
+    # collect optimal predictor subsets
+    predictors <- var_select(5, start, dist, type)
+    
+    # find optimal model parameters
+    tuned <- model_tune(5, 6, predictors, start, dist)
+    
+    # save results
+    predictors %>%
+      saveRDS('../Optimize/GLARMA_Pois_WR/predictors.RData')
+    tuned %>%
+      saveRDS('../Optimize/GLARMA_Pois_WR/tuned.RData')
+    var_select_aics %>%
+      saveRDS('../Optimize/GLARMA_Pois_WR/varSelectAIC.RData')
+    model_tune_aics %>%
+      saveRDS('../Optimize/GLARMA_Pois_WR/modelTuneAIC.RData')
+    
+    test_mses <- fitOpt(predictors, tuned, dist, type)
+    
+    test_mses %>%
+      saveRDS('../Optimize/GLARMA_Pois_WR/test_mses.RData')
+    
+    coefs <- getCoefs(predictors, dist, type)
+    
+    print(paste('Completed after', 
+                difftime(Sys.time(), start, unit = 'mins'), 'minutes'))
+  }, error = function(err) {
+    print(paste('Error fitting Poisson within-region models:', err))
+  }
+)
 ```
 
 ```{r}
