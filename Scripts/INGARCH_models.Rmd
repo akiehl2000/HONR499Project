@@ -181,11 +181,12 @@ cross_valid <- function(pred_list, resp_list, p, q, dist) {
 A function for performing variable selection on the INGARCH model using a 
 forward selection technique based on the effect sizes from the full model. 
 ```{r var-select}
-var_select <- function(select, start, dist) {
+var_select <- function(select, start, dist, type) {
   # select: the maximum number of predictor variables to model on
   # start: the start time of the model tuning procedure
   # dist: the assumed distribution for the marginal time series process
-
+  # type: 'ir' or 'wr' for inter-region or within-region fitting
+  
   working <- TRUE
   
   # define empty list to store best variable subsets
@@ -198,10 +199,17 @@ var_select <- function(select, start, dist) {
     working <- TRUE
     
     # collect training data frame
-    dfs <- gen_df(trls[1:5], trls[6:10], pred_names, resp)
-    train_df <- dfs[['train_df']]
-    remove(dfs)
-  
+    if (type == 'ir') {
+      dfs <- gen_df(trls[1:5], trls[6:10], pred_names, resp)
+      train_df <- dfs[['train_df']]
+      remove(dfs)
+    } else {
+      dfs <- gen_df(trls[1:5], trls[6:10], 
+                    resp_names[-which(resp_names == resp)], resp)
+      train_df <- dfs[['train_df']]
+      remove(dfs)
+    }
+    
     tryCatch(
       {
         # fit full model
@@ -221,20 +229,28 @@ var_select <- function(select, start, dist) {
     tryCatch(
       {
         # extract estimated coefficients from fitted model
-        model_sum <- summary(model)$coefficients$Estimate
+        model_sum <- summary(model)$coefficients
+        ests <- model_sum$Estimate
         
-        if (dist == 'poisson') {
-          est <- model_sum[-c(1:7, length(model_sum))]
+        if (rownames(model_sum)[length(rownames(model_sum))] == 'trial') {
+          est <- ests[-c(1:7, length(ests))]
         } else{
-          est <- model_sum[-c(1:7, length(model_sum) - 1, length(model_sum))]
+          est <- ests[-c(1:7, length(ests) - 1, length(ests))]
         }
         
-        full_model_select <- data.frame(var = pred_names, coef = est) %>%
-          arrange(desc(abs(coef))) %>%
-          top_n(select, coef) %>%
-          select(var) %>%
-          unlist()
-        
+        if (type == 'ir') {
+          full_model_select <- data.frame(var = pred_names, coef = est) %>%
+            arrange(desc(abs(coef))) %>%
+            top_n(select, coef) %>%
+            select(var) %>%
+            unlist()
+        } else {
+          full_model_select <- data.frame(var = resp_names[-which(resp_names == resp)], coef = est) %>%
+            arrange(desc(abs(coef))) %>%
+            top_n(select, coef) %>%
+            select(var) %>%
+            unlist()
+        }
       }, 
       error = function(err) {
         working <- FALSE
@@ -288,8 +304,8 @@ model_tune <- function(Pmax, Qmax, predictors, start, dist) {
 
   # define empty data frame for storing tuned values
   tuned <<- data.frame(resp = resp_names, 
-                      p = rep(NA, length(resp_names)),
-                      q = rep(NA, length(resp_names)))
+                       p = rep(NA, length(resp_names)),
+                       q = rep(NA, length(resp_names)))
   model_tune_mses <<- list()
   
   # loop over response variables
@@ -335,10 +351,11 @@ model_tune <- function(Pmax, Qmax, predictors, start, dist) {
 
 A function for fitting optimal models using selected predictors and parameters:
 ```{r fit-optimal}
-fitOpt <- function(predictors, tuned, dist) {
+fitOpt <- function(predictors, tuned, dist, type) {
   # predictors: a list of optimal predictor sets for each response
   # tuned: a data frame of optimal model parameters for each response
   # dist: the assumed distribution for the marginal time series process
+  # type: 'ir' or 'wr' for inter-region or within-region fitting
   
   test_mses <- data.frame(resp = resp_names,
                           mse = rep(NA, length(resp_names)))
@@ -366,13 +383,21 @@ fitOpt <- function(predictors, tuned, dist) {
                        link = 'log',
                        distr = dist)
         
-        if (dist == 'poisson') {
+        if (dist == 'poisson' & type == 'ir') {
           model %>%
-            saveRDS(paste('../Models/INGARCH_Pois/model_', resp, '.rds', 
+            saveRDS(paste('../Models/INGARCH_Pois_IR/model_', resp, '.rds', 
                           sep = ''))
+        } else if (dist == 'poisson' & type == 'wr') {
+          model %>%
+            saveRDS(paste('../Models/INGARCH_Pois_WR/model_', resp, '.rds', 
+                          sep = ''))
+        } else if (dist == 'nbinom' & type == 'ir') {
+          model %>%
+            saveRDS(paste('../Models/INGARCH_NBinom_IR/model_', resp, '.rds', 
+                          sep = ''))    
         } else {
           model %>%
-            saveRDS(paste('../Models/INGARCH_NBinom/model_', resp, '.rds', 
+            saveRDS(paste('../Models/INGARCH_NBinom_WR/model_', resp, '.rds', 
                           sep = ''))    
         }
       }, 
@@ -403,43 +428,70 @@ fitOpt <- function(predictors, tuned, dist) {
 
 A function for collecting estimated coefficients from saved optimal models:
 ```{r get-coefs}
-getCoefs <- function(predictors, dist) {
+getCoefs <- function(predictors, dist, type) {
   # predictors: a list of optimal predictor sets for each response
   # dist: the assumed distribution for the marginal time series process
+  # type: 'ir' or 'wr' for inter-region or within-region fitting
   
   working <- TRUE 
   
   # define empty data frame to store coefficients
-  coefs <- data.frame(resp = resp_names,
-                      beta_1 = rep(NA, 15),
-                      beta_2 = rep(NA, 15),
-                      beta_3 = rep(NA, 15),
-                      beta_4 = rep(NA, 15),
-                      beta_5 = rep(NA, 15),
-                      alpha = rep(NA, 15),
-                      CA3.1 = rep(NA, 15),
-                      CA3.2 = rep(NA, 15),
-                      CA3.3 = rep(NA, 15),
-                      CA3.4 = rep(NA, 15),
-                      CA3.5 = rep(NA, 15),
-                      CA3.6 = rep(NA, 15),
-                      CA3.7 = rep(NA, 15),
-                      CA3.8 = rep(NA, 15),
-                      CA3.9 = rep(NA, 15),
-                      CA3.10 = rep(NA, 15),
-                      CA3.11 = rep(NA, 15),
-                      CA3.12 = rep(NA, 15),
-                      CA3.13 = rep(NA, 15),
-                      CA3.14 = rep(NA, 15),
-                      CA3.15 = rep(NA, 15),
-                      CA3.16 = rep(NA, 15),
-                      CA3.17 = rep(NA, 15),
-                      CA3.18 = rep(NA, 15),
-                      CA3.19 = rep(NA, 15),
-                      CA3.20 = rep(NA, 15),
-                      CA3.21 = rep(NA, 15),
-                      trial = rep(NA, 15))
-  
+  if (type == 'ir') {
+    coefs <- data.frame(resp = resp_names,
+                        beta_1 = rep(NA, 15),
+                        beta_2 = rep(NA, 15),
+                        beta_3 = rep(NA, 15),
+                        beta_4 = rep(NA, 15),
+                        beta_5 = rep(NA, 15),
+                        alpha = rep(NA, 15),
+                        CA3.1 = rep(NA, 15),
+                        CA3.2 = rep(NA, 15),
+                        CA3.3 = rep(NA, 15),
+                        CA3.4 = rep(NA, 15),
+                        CA3.5 = rep(NA, 15),
+                        CA3.6 = rep(NA, 15),
+                        CA3.7 = rep(NA, 15),
+                        CA3.8 = rep(NA, 15),
+                        CA3.9 = rep(NA, 15),
+                        CA3.10 = rep(NA, 15),
+                        CA3.11 = rep(NA, 15),
+                        CA3.12 = rep(NA, 15),
+                        CA3.13 = rep(NA, 15),
+                        CA3.14 = rep(NA, 15),
+                        CA3.15 = rep(NA, 15),
+                        CA3.16 = rep(NA, 15),
+                        CA3.17 = rep(NA, 15),
+                        CA3.18 = rep(NA, 15),
+                        CA3.19 = rep(NA, 15),
+                        CA3.20 = rep(NA, 15),
+                        CA3.21 = rep(NA, 15),
+                        trial = rep(NA, 15))
+  } else {
+    coefs <- data.frame(resp = resp_names,
+                        beta_1 = rep(NA, 15),
+                        beta_2 = rep(NA, 15),
+                        beta_3 = rep(NA, 15),
+                        beta_4 = rep(NA, 15),
+                        beta_5 = rep(NA, 15),
+                        alpha = rep(NA, 15),
+                        CA1.1 = rep(NA, 15),
+                        CA1.2 = rep(NA, 15),
+                        CA1.3 = rep(NA, 15),
+                        CA1.4 = rep(NA, 15),
+                        CA1.5 = rep(NA, 15),
+                        CA1.6 = rep(NA, 15),
+                        CA1.7 = rep(NA, 15),
+                        CA1.8 = rep(NA, 15),
+                        CA1.9 = rep(NA, 15),
+                        CA1.10 = rep(NA, 15),
+                        CA1.11 = rep(NA, 15),
+                        CA1.12 = rep(NA, 15),
+                        CA1.13 = rep(NA, 15),
+                        CA1.14 = rep(NA, 15),
+                        CA1.15 = rep(NA, 15),
+                        trial = rep(NA, 15))
+  }
+
   # loop through response variables
   for (resp in resp_names) {
     working <- TRUE
@@ -447,11 +499,17 @@ getCoefs <- function(predictors, dist) {
     # import trained optimal models
     tryCatch(
       {
-        if (dist == 'poisson') {
-          model <- readRDS(paste('../Models/INGARCH_Pois/model_', resp, '.rds',
-                                 sep = ''))
+        if (dist == 'poisson' & type == 'ir') {
+          model <- readRDS(paste('../Models/INGARCH_Pois_IR/model_', resp, 
+                                 '.rds', sep = ''))
+        } else if (dist == 'poisson' & type == 'wr') {
+          model <- readRDS(paste('../Models/INGARCH_Pois_WR/model_', resp, 
+                                 '.rds', sep = ''))
+        } else if (dist == 'nbinom' & type == 'ir') {
+          model <- readRDS(paste('../Models/INGARCH_NBinom_IR/model_', resp, 
+                                 '.rds', sep = ''))
         } else {
-          model <- readRDS(paste('../Models/INGARCH_NBinom/model_', resp, 
+          model <- readRDS(paste('../Models/INGARCH_NBinom_WR/model_', resp, 
                                  '.rds', sep = ''))
         }
       }, 
@@ -478,18 +536,24 @@ getCoefs <- function(predictors, dist) {
           !grepl('sigma', rowNms) &
           !grepl('trial', rowNms))]
       nms[which(grepl('alpha', nms))] <- 'alpha'
-      nms <- c(nms, predictors[[resp]], 'trial')
-      
+      nms <- c(nms, as.character(predictors[[resp]]), 'trial')
+
       coefs[which(coefs$resp == resp), nms] <- abs(est)
     }
   }
   
-  if (dist == 'poisson') {
+  if (dist == 'poisson' & type == 'ir') {
     coefs %>%
-      saveRDS('../Optimize/INGARCH_Pois/coefs.RData')
+      saveRDS('../Optimize/INGARCH_Pois_IR/coefs.RData')
+  } else if (dist == 'poisson' & type == 'wr') {
+    coefs %>%
+      saveRDS('../Optimize/INGARCH_Pois_WR/coefs.RData')
+  } else if (dist == 'nbinom' & type == 'ir') {
+    coefs %>%
+      saveRDS('../Optimize/INGARCH_NBinom_IR/coefs.RData')
   } else {
     coefs %>%
-      saveRDS('../Optimize/INGARCH_NBinom/coefs.RData')
+      saveRDS('../Optimize/INGARCH_NBinom_WR/coefs.RData')
   }
   
   return(coefs)
@@ -498,64 +562,94 @@ getCoefs <- function(predictors, dist) {
 
 # Poisson Models
 
-Find optimal subset of predictors and model parameters for poisson model:
-```{r tune-poisson}
-dist <- 'poisson'
+Fit poisson inter-region models:
+```{r}
+print('Fitting Poisson inter-region models...')
+tryCatch(
+  {
+    dist <- 'poisson'
+    type <- 'ir'
 
-# execute variable selection and model tuning
-start <- Sys.time()
+    start <- Sys.time()
 
-# collect optimal predictor subsets
-predictors <- var_select(5, start, dist)
-  
-# find optimal model parameters
-tuned <- model_tune(5, 5, predictors, start, dist)
+    # collect optimal predictor subsets
+    predictors <- var_select(5, start, dist, type)
+
+    # find optimal model parameters
+    tuned <- model_tune(5, 5, predictors, start, dist)
+
+    # save results
+    predictors %>%
+      saveRDS('../Optimize/INGARCH_Pois_IR/predictors.RData')
+    tuned %>%
+      saveRDS('../Optimize/INGARCH_Pois_IR/tuned.RData')
+    var_select_mses %>%
+      saveRDS('../Optimize/INGARCH_Pois_IR/varSelectMSE.RData')
+    model_tune_mses %>%
+      saveRDS('../Optimize/INGARCH_Pois_IR/modelTuneMSE.RData')
+
+    test_mses <- fitOpt(predictors, tuned, dist, type)
+
+    test_mses %>%
+      saveRDS('../Optimize/INGARCH_Pois_IR/test_mses.RData')
+
+    coefs <- getCoefs(predictors, dist, type)
+
+    print(paste('Completed after',
+                difftime(Sys.time(), start, unit = 'mins'), 'minutes'))
+  }, error = function(err) {
+    print(paste('Error fitting Poisson inter-region models:', err))
+  }
+)
 ```
 
-Save optimized predictor subsets and parameters, and associated MSE values:
-```{r results-poisson}
-predictors %>%
-  saveRDS('../Optimize/INGARCH_Pois/predictors.RData')
-
-tuned %>%
-  saveRDS('../Optimize/INGARCH_Pois/tuned.RData')
-
-var_select_mses %>%
-  saveRDS('../Optimize/INGARCH_Pois/varSelectMSE.RData')
-
-model_tune_mses %>%
-  saveRDS('../Optimize/INGARCH_Pois/modelTuneMSE.RData')
+```{r}
+remove(predictors)
+remove(var_select_mses)
+remove(tuned)
+remove(model_tune_mses)
+remove(coefs)
+remove(test_mses)
 ```
 
-Fit optimal poisson models using selected predictors and parameters:
-```{r fit-poisson}
-start <- Sys.time()
+Fit poisson within-region models:
+```{r}
+print('Fitting Poisson within-region models...')
+tryCatch(
+  {
+    type <- 'wr'
 
-test_mses <- fitOpt(predictors, tuned, dist)
+    start <- Sys.time()
 
-test_mses %>%
-  saveRDS('../Optimize/INGARCH_Pois/test_mses.RData')
+    # collect optimal predictor subsets
+    predictors <- var_select(5, start, dist, type)
 
-print(paste('Completed after', 
-            difftime(Sys.time(), start, unit = 'mins'), 'minutes'))
-```
+    # find optimal model parameters
+    tuned <- model_tune(5, 5, predictors, start, dist)
 
-Collect and plot estimated coefficients from optimal poisson models:
-```{r plot-poisson}
-coefs <- getCoefs(predictors, dist)
+    # save results
+    predictors %>%
+      saveRDS('../Optimize/INGARCH_Pois_WR/predictors.RData')
+    tuned %>%
+      saveRDS('../Optimize/INGARCH_Pois_WR/tuned.RData')
+    var_select_mses %>%
+      saveRDS('../Optimize/INGARCH_Pois_WR/varSelectMSE.RData')
+    model_tune_mses %>%
+      saveRDS('../Optimize/INGARCH_Pois_WR/modelTuneMSE.RData')
 
-coefs %>%
-  pivot_longer(!resp, names_to = 'pred', values_to = 'est') %>%
-  ggplot() +
-  geom_tile(aes(factor(pred, levels = c('beta_1', 'beta_2', 'beta_3', 'beta_4', 
-                                        'beta_5', 'alpha', pred_names, 
-                                        'trial')),
-                factor(resp, levels = resp_names), 
-                fill = as.numeric(est))) +
-  scale_fill_continuous() +
-  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +
-  labs(title='Poisson INGARCH Coefficient Estimates', 
-       x='Predictor', y='Response', fill='')
+    test_mses <- fitOpt(predictors, tuned, dist, type)
+
+    test_mses %>%
+      saveRDS('../Optimize/INGARCH_Pois_WR/test_mses.RData')
+
+    coefs <- getCoefs(predictors, dist, type)
+
+    print(paste('Completed after',
+                difftime(Sys.time(), start, unit = 'mins'), 'minutes'))
+  }, error = function(err) {
+    print(paste('Error fitting Poisson within-region models:', err))
+  }
+)
 ```
 
 ```{r}
@@ -569,74 +663,85 @@ remove(test_mses)
 
 # Negative Binomial Models
 
-Find optimal subset of predictors and model parameters for negative binomial 
-model:
-```{r tune-nbinom}
-dist <- 'nbinom'
-
-# execute variable selection and model tuning
-start <- Sys.time()
-
-# collect optimal predictor subsets
-predictors <- var_select(5, start, dist)
-  
-# find optimal model parameters
-tuned <- model_tune(5, 5, predictors, start, dist)
-```
-
-Save optimized predictor subsets and parameters, and associated MSE values:
-```{r results-nbinom}
-predictors %>%
-  saveRDS('../Optimize/INGARCH_NBinom/predictors.RData')
-
-tuned %>%
-  saveRDS('../Optimize/INGARCH_NBinom/tuned.RData')
-
-var_select_mses %>%
-  saveRDS('../Optimize/INGARCH_NBinom/varSelectMSE.RData')
-
-model_tune_mses %>%
-  saveRDS('../Optimize/INGARCH_NBinom/modelTuneMSE.RData')
-```
-
-Fit optimal negative binomial models using selected predictors and parameters:
-```{r fit-nbinom}
-start <- Sys.time()
-
-test_mses <- fitOpt(predictors, tuned, dist)
-
-test_mses %>%
-  saveRDS('../Optimize/INGARCH_NBinom/test_mses.RData')
-
-print(paste('Completed after', 
-            difftime(Sys.time(), start, unit = 'mins'), 'minutes'))
-```
-
-Collect and plot estimated coefficients from optimal negative binomial models:
-```{r plot-nbinom}
-coefs <- getCoefs(predictors, dist)
-
-coefs %>%
-  pivot_longer(!resp, names_to = 'pred', values_to = 'est') %>%
-  ggplot() +
-  geom_tile(aes(factor(pred, levels = c('beta_1', 'beta_2', 'beta_3', 'beta_4', 
-                                        'beta_5', 'alpha', pred_names, 
-                                        'trial')),
-                factor(resp, levels = resp_names), 
-                fill = as.numeric(est))) +
-  scale_fill_continuous() +
-  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +
-  labs(title='Negative Binomial INGARCH Coefficient Estimates', 
-       x='Predictor', y='Response', fill='')
-```
-
+Fit negative binomial inter-region models:
 ```{r}
-remove(predictors)
-remove(var_select_mses)
-remove(tuned)
-remove(model_tune_mses)
-remove(coefs)
-remove(test_mses)
+print('Fitting Negative Binomial inter-region models...')
+tryCatch(
+  {
+    dist <- 'nbinom'
+    type <- 'ir'
+
+    start <- Sys.time()
+
+    # collect optimal predictor subsets
+    predictors <- var_select(5, start, dist, type)
+
+    # find optimal model parameters
+    tuned <- model_tune(5, 5, predictors, start, dist)
+
+    # save results
+    predictors %>%
+      saveRDS('../Optimize/INGARCH_NBinom_IR/predictors.RData')
+    tuned %>%
+      saveRDS('../Optimize/INGARCH_NBinom_IR/tuned.RData')
+    var_select_mses %>%
+      saveRDS('../Optimize/INGARCH_NBinom_IR/varSelectMSE.RData')
+    model_tune_mses %>%
+      saveRDS('../Optimize/INGARCH_NBinom_IR/modelTuneMSE.RData')
+
+    test_mses <- fitOpt(predictors, tuned, dist, type)
+
+    test_mses %>%
+      saveRDS('../Optimize/INGARCH_NBinom_IR/test_mses.RData')
+
+    coefs <- getCoefs(predictors, dist, type)
+
+    print(paste('Completed after',
+                difftime(Sys.time(), start, unit = 'mins'), 'minutes'))
+  }, error = function(err) {
+    print(paste('Error fitting Negative Binomial inter-region models:', err))
+  }
+)
+```
+
+Fit negative binomial within-region models:
+```{r}
+print('Fitting Negative Binomial within-region models...')
+tryCatch(
+  {
+    type <- 'wr'
+    
+    start <- Sys.time()
+    
+    # collect optimal predictor subsets
+    predictors <- var_select(5, start, dist, type)
+    
+    # find optimal model parameters
+    tuned <- model_tune(5, 5, predictors, start, dist)
+    
+    # save results
+    predictors %>%
+      saveRDS('../Optimize/INGARCH_NBinom_WR/predictors.RData')
+    tuned %>%
+      saveRDS('../Optimize/INGARCH_NBinom_WR/tuned.RData')
+    var_select_mses %>%
+      saveRDS('../Optimize/INGARCH_NBinom_WR/varSelectMSE.RData')
+    model_tune_mses %>%
+      saveRDS('../Optimize/INGARCH_NBinom_WR/modelTuneMSE.RData')
+    
+    test_mses <- fitOpt(predictors, tuned, dist, type)
+    
+    test_mses %>%
+      saveRDS('../Optimize/INGARCH_NBinom_WR/test_mses.RData')
+    
+    coefs <- getCoefs(predictors, dist, type)
+    
+    print(paste('Completed after', 
+                difftime(Sys.time(), start, unit = 'mins'), 'minutes'))
+  }, error = function(err) {
+    print(paste('Error fitting Negative Binomial within-region models:', err))
+  }
+)
 ```
 
 # Testing Area
