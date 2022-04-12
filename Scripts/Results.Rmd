@@ -1,0 +1,267 @@
+---
+title: "Results"
+author: "Adam Kiehl"
+date: "4/7/2022"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+```
+
+Read in binned data:
+```{r}
+binned_df <- read.csv('../Data/binned_df.csv')
+
+resp_names <- c('CA1.1', 'CA1.2', 'CA1.3', 'CA1.4', 'CA1.5', 'CA1.6', 'CA1.7', 
+                'CA1.8', 'CA1.9', 'CA1.10', 'CA1.11', 'CA1.12', 'CA1.13', 
+                'CA1.14', 'CA1.15')
+pred_names <- c('CA3.1', 'CA3.2', 'CA3.3', 'CA3.4', 'CA3.5', 'CA3.6', 'CA3.7', 
+                'CA3.8', 'CA3.9', 'CA3.10', 'CA3.11', 'CA3.12', 'CA3.13', 
+                'CA3.14', 'CA3.15', 'CA3.16', 'CA3.17', 'CA3.18', 'CA3.19', 
+                'CA3.20', 'CA3.21')
+
+trls <- unique(binned_df$trial)
+```
+
+Exploratory view of data frame:
+```{r}
+summary(binned_df)
+```
+
+Plot spike trains for a single trial:
+```{r}
+binned_df %>%
+  filter(trial == unique(binned_df$trial)[1]) %>%
+  select(c(binstart, pred_names, resp_names)) %>%
+  pivot_longer(c(all_of(pred_names), all_of(resp_names)), names_to = 'neuron', values_to = 'count') %>%
+  ggplot() +
+  geom_col(aes(binstart, count)) +
+  facet_wrap(factor(neuron, levels = c(resp_names, pred_names)) ~ .) +
+  theme(axis.text.x = element_blank(), axis.ticks.x = element_blank()) +
+  labs(title = 'Single Trial Spike Trains', subtitle = 'Data binned into half second intervals', 
+       x = 'Time [sec]', y = 'Bin Spike Count')
+```
+
+Calculate normalized cross-correlation matrix:
+```{r}
+norm_cc <- matrix(NA, nrow = length(c(pred_names, resp_names)), 
+                  ncol = length(c(pred_names, resp_names))) %>% 
+  as.data.frame() %>%
+  mutate(var2 = c(pred_names, resp_names))
+names(norm_cc) <- c(pred_names, resp_names, 'var2')
+                     
+for (var1 in c(pred_names, resp_names)) {
+  for (var2 in c(pred_names, resp_names)) {
+    if (var1 == var2) {
+      break
+    }
+    
+    temp <- ccf(binned_df[, var1], binned_df[, var2], plot = FALSE)
+    norm_cc[which(norm_cc$var2 == var2), var1] <- max(temp$acf)
+  }
+}
+
+var2_vec <- c()
+for (i in 1:nrow(norm_cc)) {
+  var2_vec <- c(var2_vec, rep(norm_cc$var2[i], (37 - i - 1)))
+}
+
+norm_cc %>%
+  select(-var2) %>%
+  pivot_longer(cols = c(pred_names, resp_names), 
+               names_to = 'var1', values_to = 'corr') %>%
+  na.omit(corr) %>%
+  mutate(var2 = var2_vec) %>%
+  ggplot() +
+  geom_tile(aes(factor(var1, levels = c(pred_names, resp_names)), 
+                factor(var2, levels = c(pred_names, resp_names)), 
+                fill = corr)) +
+  theme(axis.text.x = element_text(angle = 45, vjust = .65)) +
+  labs(title = 'Normalized Cross Correlation Matrix', 
+       x = 'Variable', y = 'Variable', fill = 'Correlation')
+```
+
+Collect test MSE results:
+```{r}
+test_mse_all <- data.frame(response = resp_names, 
+                           GLAR_Pois_IR = readRDS('../Optimize/GLAR_Pois_IR/test_mses.RData')$mse,
+                           GLAR_Pois_WR = readRDS('../Optimize/GLAR_Pois_WR/test_mses.RData')$mse,
+                           GLAR_NBinom_IR = readRDS('../Optimize/GLAR_NBinom_IR/test_mses.RData')$mse,
+                           GLAR_NBinom_WR = readRDS('../Optimize/GLAR_NBinom_WR/test_mses.RData')$mse,
+                           INGARCH_Pois_IR = readRDS('../Optimize/INGARCH_Pois_IR/test_mses.RData')$mse,
+                           INGARCH_Pois_WR = readRDS('../Optimize/INGARCH_Pois_WR/test_mses.RData')$mse,
+                           INGARCH_NBinom_IR = readRDS('../Optimize/INGARCH_NBinom_IR/test_mses.RData')$mse,
+                           INGARCH_NBinom_WR = readRDS('../Optimize/INGARCH_NBinom_WR/test_mses.RData')$mse,
+                           GLARMA_IR = readRDS('../Optimize/GLARMA_Pois_IR/test_mses.RData')$mse,
+                           GLARMA_WR = readRDS('../Optimize/GLARMA_Pois_WR/test_mses.RData')$mse)
+test_mse_all
+
+test_mse_all %>%
+  pivot_longer(names(test_mse_all)[-1], names_to = 'model', values_to = 'MSE') %>%
+  ggplot() +
+  geom_tile(aes(factor(model, levels = names(test_mse_all)[-1]), factor(response, levels = resp_names), fill = MSE)) +
+  theme(axis.text.x = element_text(angle = 75, vjust = .55)) +
+  labs(title = 'Collected Test MSE Values', x = 'Model', y = 'Response Variable')
+```
+
+Inter-region GLAR poisson coefficients:
+```{r}
+readRDS('../Optimize/GLAR_Pois_IR/coefs.RData') %>%
+  pivot_longer(!resp, names_to = 'pred', values_to = 'est') %>%
+  ggplot() +
+  geom_tile(aes(factor(pred, levels = c('beta_1', 'beta_2', 'beta_3', 'beta_4', 
+                                        'beta_5', 'alpha', pred_names, 
+                                        'trial')),
+                factor(resp, levels = resp_names), 
+                fill = as.numeric(est))) +
+  scale_fill_continuous() +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +
+  labs(title='Inter-region GLAR Poisson Coefficient Estimates', 
+       x='Predictor', y='Response', fill='')
+```
+
+Within-region GLAR poisson coefficients:
+```{r}
+readRDS('../Optimize/GLAR_Pois_WR/coefs.RData') %>%
+  pivot_longer(!resp, names_to = 'pred', values_to = 'est') %>%
+  ggplot() +
+  geom_tile(aes(factor(pred, levels = c('beta_1', 'beta_2', 'beta_3', 'beta_4', 
+                                        'beta_5', 'alpha', resp_names, 
+                                        'trial')),
+                factor(resp, levels = resp_names), 
+                fill = as.numeric(est))) +
+  scale_fill_continuous() +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +
+  labs(title='Within-region GLAR Poisson Coefficient Estimates', 
+       x='Predictor', y='Response', fill='')
+```
+
+Inter-region GLAR negative binomial coefficients:
+```{r}
+readRDS('../Optimize/GLAR_NBinom_IR/coefs.RData') %>%
+  pivot_longer(!resp, names_to = 'pred', values_to = 'est') %>%
+  ggplot() +
+  geom_tile(aes(factor(pred, levels = c('beta_1', 'beta_2', 'beta_3', 'beta_4', 
+                                        'beta_5', 'alpha', pred_names, 
+                                        'trial')),
+                factor(resp, levels = resp_names), 
+                fill = as.numeric(est))) +
+  scale_fill_continuous() +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +
+  labs(title='Inter-region GLAR Negative Binomial Coefficient Estimates', 
+       x='Predictor', y='Response', fill='')
+```
+
+Within-region GLAR negative binomial coefficients:
+```{r}
+readRDS('../Optimize/GLAR_NBinom_WR/coefs.RData') %>%
+  pivot_longer(!resp, names_to = 'pred', values_to = 'est') %>%
+  ggplot() +
+  geom_tile(aes(factor(pred, levels = c('beta_1', 'beta_2', 'beta_3', 'beta_4', 
+                                        'beta_5', 'alpha', resp_names, 
+                                        'trial')),
+                factor(resp, levels = resp_names), 
+                fill = as.numeric(est))) +
+  scale_fill_continuous() +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +
+  labs(title='Within-region GLAR Negative Binomial Coefficient Estimates', 
+       x='Predictor', y='Response', fill='')
+```
+
+Inter-region INGARCH poisson coefficients:
+```{r}
+readRDS('../Optimize/INGARCH_Pois_IR/coefs.RData') %>%
+  pivot_longer(!resp, names_to = 'pred', values_to = 'est') %>%
+  ggplot() +
+  geom_tile(aes(factor(pred, levels = c('beta_1', 'beta_2', 'beta_3', 'beta_4', 
+                                        'beta_5', 'alpha', pred_names, 
+                                        'trial')),
+                factor(resp, levels = resp_names), 
+                fill = as.numeric(est))) +
+  scale_fill_continuous() +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +
+  labs(title='Inter-region INGARCH Poisson Coefficient Estimates', 
+       x='Predictor', y='Response', fill='')
+```
+
+Within-region INGARCH poisson coefficients:
+```{r}
+readRDS('../Optimize/INGARCH_Pois_WR/coefs.RData') %>%
+  pivot_longer(!resp, names_to = 'pred', values_to = 'est') %>%
+  ggplot() +
+  geom_tile(aes(factor(pred, levels = c('beta_1', 'beta_2', 'beta_3', 'beta_4', 
+                                        'beta_5', 'alpha', resp_names, 
+                                        'trial')),
+                factor(resp, levels = resp_names), 
+                fill = as.numeric(est))) +
+  scale_fill_continuous() +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +
+  labs(title='Within-region INGARCH Poisson Coefficient Estimates', 
+       x='Predictor', y='Response', fill='')
+```
+
+Inter-region INGARCH negative binomial coefficients:
+```{r}
+readRDS('../Optimize/INGARCH_NBinom_IR/coefs.RData') %>%
+  pivot_longer(!resp, names_to = 'pred', values_to = 'est') %>%
+  ggplot() +
+  geom_tile(aes(factor(pred, levels = c('beta_1', 'beta_2', 'beta_3', 'beta_4', 
+                                        'beta_5', 'alpha', pred_names, 
+                                        'trial')),
+                factor(resp, levels = resp_names), 
+                fill = as.numeric(est))) +
+  scale_fill_continuous() +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +
+  labs(title='Inter-region INGARCH Negative Binomial Coefficient Estimates', 
+       x='Predictor', y='Response', fill='')
+```
+
+Within-region INGARCH negative binomial coefficients:
+```{r}
+readRDS('../Optimize/INGARCH_NBinom_WR/coefs.RData') %>%
+  pivot_longer(!resp, names_to = 'pred', values_to = 'est') %>%
+  ggplot() +
+  geom_tile(aes(factor(pred, levels = c('beta_1', 'beta_2', 'beta_3', 'beta_4', 
+                                        'beta_5', 'alpha', resp_names, 
+                                        'trial')),
+                factor(resp, levels = resp_names), 
+                fill = as.numeric(est))) +
+  scale_fill_continuous() +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +
+  labs(title='Within-region INGARCH Negative Binomial Coefficient Estimates', 
+       x='Predictor', y='Response', fill='')
+```
+
+Inter-region GLARMA poisson coefficients:
+```{r}
+readRDS('../Optimize/GLARMA_Pois_IR/coefs.RData') %>%
+  pivot_longer(!resp, names_to = 'pred', values_to = 'est') %>%
+  ggplot() +
+  geom_tile(aes(factor(pred, levels = c('phi_1', 'phi_2', 'phi_3', 'phi_4', 
+                                        'phi_5', 'theta', pred_names, 
+                                        'trial')),
+                factor(resp, levels = resp_names), 
+                fill = as.numeric(est))) +
+  scale_fill_continuous() +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +
+  labs(title='Inter-region GLARMA Poisson Coefficient Estimates', 
+       x='Predictor', y='Response', fill='')
+```
+
+Within-region GLARMA poisson coefficients:
+```{r}
+readRDS('../Optimize/GLARMA_Pois_WR/coefs.RData') %>%
+  pivot_longer(!resp, names_to = 'pred', values_to = 'est') %>%
+  ggplot() +
+  geom_tile(aes(factor(pred, levels = c('phi_1', 'phi_2', 'phi_3', 'phi_4', 
+                                        'phi_5', 'theta', resp_names, 
+                                        'trial')),
+                factor(resp, levels = resp_names), 
+                fill = as.numeric(est))) +
+  scale_fill_continuous() +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +
+  labs(title='Within-region GLARMA Poisson Coefficient Estimates', 
+       x='Predictor', y='Response', fill='')
+```
