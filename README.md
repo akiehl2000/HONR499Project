@@ -12,4 +12,5 @@ to execute model fitting scripts.
 procedure.  
 - `Output`: Contains output and error messages from executing the model fitting
 scripts.  
+- `Plots`: Contains all saved result plots used for paper and presentation.
 - `Scripts`: Contains model fitting scripts.  
