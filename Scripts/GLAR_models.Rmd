@@ -26,10 +26,8 @@ $$
 F_{t} &= \{Y_{t}, \lambda_{t}, \boldsymbol{X_{t+1}} : t \in \mathbb{N}\} \\
 Y_{t} | F_{t-1} &\sim Poisson(\lambda_t) \\
 \nu_{t} &= log(\lambda_{t}) \\
-\nu_{t} &= \beta_{0} + \sum_{j=1}^p \beta_{j} log(Y_{t-j} + 1) + 
-\boldsymbol{\eta^{T}} \boldsymbol{X_t} \\
-P(Y_{t} = y |F_{t-1}) &= \frac{\lambda_{t}^{y} e^{-\lambda_{t}}}{y!}, 
-y = 0, 1, 2, ...
+\nu_{t} &= \beta_{0} + \sum_{j=1}^p \beta_{j} log(Y_{t-j} + 1) + \boldsymbol{\eta^{T}} \boldsymbol{X_t} \\
+P(Y_{t} = y |F_{t-1}) &= \frac{\lambda_{t}^{y} e^{-\lambda_{t}}}{y!}, y = 0, 1, 2, ...
 \end{aligned}
 $$
 Or under a negative binomial assumption like:  
@@ -42,10 +40,7 @@ Y_{t} | F_{t-1} &\sim NegBinom(\lambda_t, \phi_{t}) \\
 \nu_{t} &= log(\lambda_{t}) \\
 \nu_{t} &= \beta_{0} + \sum_{j=1}^p \beta_{j} log(Y_{t-j} + 1) + 
 \boldsymbol{\eta^{T}} \boldsymbol{X_t} \\
-P(Y_{t} = y |F_{t-1}) &= \frac{\Gamma (\phi + y)}{\Gamma (y + 1) \Gamma (\phi)} 
-(\frac{\phi}{\phi + \lambda_{t}})^{\phi} 
-(\frac{\lambda_{t}}{\phi + \lambda_{t}})^{y}, 
-y = 0, 1, 2, ...
+P(Y_{t} = y |F_{t-1}) &= \frac{\Gamma (\phi + y)}{\Gamma (y + 1) \Gamma (\phi)} (\frac{\phi}{\phi + \lambda_{t}})^{\phi} (\frac{\lambda_{t}}{\phi + \lambda_{t}})^{y}, y = 0, 1, 2, ...
 \end{aligned}
 $$
 The marginal mean $\lambda_{t}$ of the assumed poisson process is transformed 
@@ -759,23 +754,23 @@ remove(test_mses)
 
 Generate diagnostic plots, summary, and MSE for quick model testing:
 ```{r}
-dist <- 'poisson'
-resp <- 'CA1.1'
+dist <- 'nbinom'
+resp <- 'CA1.2'
 
 if (dist == 'poisson') {
-  readRDS(paste('../Models/GLAR_Pois/model_', resp, '.rds', sep = '')) %>% 
+  readRDS(paste('../Models/GLAR_Pois_IR/model_', resp, '.rds', sep = '')) %>% 
     plot()
 } else {
-  readRDS(paste('../Models/GLAR_NBinom/model_', resp, '.rds', sep = '')) %>% 
+  readRDS(paste('../Models/GLAR_NBinom_IR/model_', resp, '.rds', sep = '')) %>% 
     plot()
 }
 
 if (dist == 'poisson') {
-  predictors <- readRDS('../Optimize/GLAR_Pois/predictors.RData')
-  tuned <- readRDS('../Optimize/GLAR_Pois/tuned.RData')
+  predictors <- readRDS('../Optimize/GLAR_Pois_IR/predictors.RData')
+  tuned <- readRDS('../Optimize/GLAR_Pois_IR/tuned.RData')
 } else {
-  predictors <- readRDS('../Optimize/GLAR_NBinom/predictors.RData')
-  tuned <- readRDS('../Optimize/GLAR_NBinom/tuned.RData')
+  predictors <- readRDS('../Optimize/GLAR_NBinom_IR/predictors.RData')
+  tuned <- readRDS('../Optimize/GLAR_NBinom_IR/tuned.RData')
 }
 
 p <- as.numeric(tuned$p[which(tuned$resp == resp)])
