@@ -505,28 +505,24 @@ getCoefs <- function(predictors, dist, type) {
     if (working == TRUE & !is.null(predictors[[resp]])) {
       tryCatch (
         {
-          model_sum <- summary(model)
-          rowNms <- rownames(model_sum$coefficients)
-          model_sum <- model_sum$coefficients$Estimate
-          
-          if (dist == 'poisson') {
-            est <- model_sum[-1]
-          } else {
-            est <- model_sum[-c(1, length(model_sum))]
-          }
-          
-          nms <- rowNms[which(
-            !grepl('var', rowNms) & 
-              !grepl('Intercept', rowNms) & 
-              !grepl('sigma', rowNms) &
-              !grepl('trial', rowNms))]
-          nms <- c(nms, as.character(predictors[[resp]]), 'trial')
-          
-          coefs[which(coefs$resp == resp), nms] <- abs(est)
+          model_sum <- model$coefficients
+          rowNms <- names(model_sum)
         }, error = function(err) {
-          print(paste('Model evaluation error for ', resp, ':', err, sep = ''))
+          model_sum <- model$coefficients
+          rowNms <- names(model_sum)
         }
       )
+          
+      est <- model_sum[-1]
+          
+      nms <- rowNms[which(
+        !grepl('var', rowNms) & 
+        !grepl('Intercept', rowNms) & 
+        !grepl('sigma', rowNms) &
+        !grepl('trial', rowNms))]
+      nms <- c(nms, as.character(predictors[[resp]]), 'trial')
+          
+      coefs[which(coefs$resp == resp), nms] <- abs(est)
     }
   }
   
