@@ -26,9 +26,7 @@ $$
 F_{t} &= \{Y_{t}, \lambda_{t}, \boldsymbol{X_{t+1}} : t \in \mathbb{N}\} \\
 Y_{t} | F_{t-1} &\sim Poisson(\lambda_t) \\
 \nu_{t} &= log(\lambda_{t}) \\
-\nu_{t} &= \beta_{0} + \sum_{j=1}^p \beta_{j} log(Y_{t-j} + 1) + 
-\sum_{k=1}^q a_k \nu_{t-k} + \boldsymbol{\eta}^{T} \boldsymbol{X}_t \\
-\nu_{t} &= \beta_{0} + \sum_{j=1}^p \beta_{j} log(Y_{t-j} + 1) + a \nu_{t-q} + \boldsymbol{\eta}^{T} \boldsymbol{X}_t \\
+\nu_{t} &= \beta_{0} + \sum_{i=1}^p \beta_{j} log(Y_{t-i} + 1) + \alpha \nu_{t-q} + \boldsymbol{\eta}^{T} \boldsymbol{X}_t \\
 P(Y_{t} = y |F_{t-1}) &= \frac{\lambda_{t}^{y} e^{-\lambda_{t}}}{y!}, 
 y = 0, 1, 2, ...
 \end{aligned}
@@ -41,8 +39,7 @@ $$
 F_{t} &= \{Y_{t}, \lambda_{t}, \boldsymbol{X_{t+1}} : t \in \mathbb{N}\} \\
 Y_{t} | F_{t-1} &\sim NegBinom(\lambda_t, \phi_{t}) \\
 \nu_{t} &= log(\lambda_{t}) \\
-\nu_{t} &= \beta_{0} + \sum_{j=1}^p \beta_{j} log(Y_{t-j} + 1) + 
-\sum_{k=1}^q a_k \nu_{t-k} + \boldsymbol{\eta}^{T} \boldsymbol{X}_t \\
+\nu_{t} &= \beta_{0} + \sum_{i=1}^p \beta_{j} log(Y_{t-i} + 1) + \alpha \nu_{t-q} + \boldsymbol{\eta}^{T} \boldsymbol{X}_t \\
 P(Y_{t} = y |F_{t-1}) &= \frac{\Gamma (\phi + y)}{\Gamma (y + 1) \Gamma (\phi)} 
 (\frac{\phi}{\phi + \lambda_{t}})^{\phi} 
 (\frac{\lambda_{t}}{\phi + \lambda_{t}})^{y}, 
