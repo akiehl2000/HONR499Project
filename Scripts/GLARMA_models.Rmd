@@ -26,9 +26,9 @@ $$
 F_{t} &= \{Y_{t}, \lambda_{t}, \boldsymbol{X_{t+1}} : t \in \mathbb{N}\} \\
 Y_{t} | F_{t-1} &\sim Poisson(\lambda_t) \\
 \nu_{t} &= log(\lambda_{t}) \\
-\nu_{t} &= \sum_{j=1}^p \phi_{j} (log(Y_{t-j}) - \boldsymbol{\eta}^{T} 
-\boldsymbol{X}_{t-j}) + \sum_{k=1}^q \psi_k (log(Y_{t-k}) - \nu_{t-k}) + 
-\boldsymbol{\eta}^{T} \boldsymbol{X}_t\\
+e_{t} &= \frac{Y_{t} - \mu_{t}}{\sigma_{t}} \\
+Z_{t} & = \sum_{i=1}^{p} \phi_{i} Z_{t-i} + \sigma_{t} e_{t-1} + \theta e_{t-1-q} \\
+\nu_{t} &= O_{t} + Z_{t} + \boldsymbol{\eta^{T}} \boldsymbol{X_t} \\
 P(Y_{t} = y |F_{t-1}) &= \frac{\lambda_{t}^{y} e^{-\lambda_{t}}}{y!}, 
 y = 0, 1, 2, ...
 \end{aligned}
@@ -41,9 +41,9 @@ $$
 F_{t} &= \{Y_{t}, \lambda_{t}, \boldsymbol{X_{t+1}} : t \in \mathbb{N}\} \\
 Y_{t} | F_{t-1} &\sim NegBinom(\lambda_t, \phi_{t}) \\
 \nu_{t} &= log(\lambda_{t}) \\
-\nu_{t} &= \sum_{j=1}^p \phi_{j} (log(Y_{t-j}) - \boldsymbol{\eta}^{T} 
-\boldsymbol{X}_{t-j}) + \sum_{k=1}^q \psi_k (log(Y_{t-k}) - \nu_{t-k}) + 
-\boldsymbol{\eta}^{T} \boldsymbol{X}_t\\
+e_{t} &= \frac{Y_{t} - \mu_{t}}{\sigma_{t}} \\
+Z_{t} & = \sum_{i=1}^{p} \phi_{i} Z_{t-i} + \sigma_{t} e_{t-1} + \theta e_{t-1-q} \\
+\nu_{t} &= O_{t} + Z_{t} + \boldsymbol{\eta^{T}} \boldsymbol{X_t} \\
 P(Y_{t} = y |F_{t-1}) &= \frac{\Gamma (\phi + y)}{\Gamma (y + 1) \Gamma (\phi)} 
 (\frac{\phi}{\phi + \lambda_{t}})^{\phi} 
 (\frac{\lambda_{t}}{\phi + \lambda_{t}})^{y}, 
@@ -740,6 +740,35 @@ mean((pred[['pred']] - valid_pred[, resp])^2, na.rm = TRUE)
 R <- 100
 
 y_pred <- rep(NA, 100)
+
+dist <- 'pois'
+resp <- 'CA1.9'
+
+if (dist == 'pois') {
+  readRDS(paste('../Models/GLARMA_Pois_WR/model_', resp, '.rds', sep = '')) %>% 
+    plot()
+} else {
+  readRDS(paste('../Models/GLARMA_NBinom_IR/model_', resp, '.rds', sep = '')) %>% 
+    plot()
+}
+
+if (dist == 'pois') {
+  predictors <- readRDS('../Optimize/GLARMA_Pois_WR/predictors.RData')
+  tuned <- readRDS('../Optimize/GLARMA_Pois_WR/tuned.RData')
+} else {
+  predictors <- readRDS('../Optimize/GLARMA_NBinom_IR/predictors.RData')
+  tuned <- readRDS('../Optimize/GLARMA_NBinom_IR/tuned.RData')
+}
+
+p <- as.numeric(tuned$p[which(tuned$resp == resp)])
+q <- as.numeric(tuned$q[which(tuned$resp == resp)])
+
+# collect data frames
+dfs <- gen_df(1:60, 61:80, predictors[[resp]], resp)
+train_df <- dfs[['train_df']]
+valid_df <- dfs[['valid_df']]
+valid_pred <- dfs[['valid_pred']]
+remove(dfs)
 
 model <- glarma(train_df[, 1], as.matrix(train_df[, -1]), phiLags = 1:5, thetaLags = 6)
 
