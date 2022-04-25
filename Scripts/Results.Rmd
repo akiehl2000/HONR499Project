@@ -79,9 +79,11 @@ norm_cc %>%
   na.omit(corr) %>%
   mutate(var2 = var2_vec) %>%
   ggplot() +
-  geom_tile(aes(factor(var1, levels = c(pred_names, resp_names)), 
-                factor(var2, levels = c(pred_names, resp_names)), 
+  geom_tile(aes(factor(var1, levels = c(all_of(pred_names), all_of(resp_names))), 
+                factor(var2, levels = c(all_of(pred_names), all_of(resp_names))), 
                 fill = corr)) +
+  geom_segment(aes(x = 20.5, xend = 20.5, y = 0, yend = 21.5), color = 'white') +
+  geom_segment(aes(x = 20.5, xend = 35.5, y = 21.5, yend = 21.5), color = 'white') +
   theme_bw() +
   theme(axis.text.x = element_text(angle = 90, vjust = .65)) +
   labs(title = 'Normalized Cross Correlation Matrix', 
@@ -102,7 +104,7 @@ test_mse_all <- data.frame(response = resp_names,
                            INGARCH_NBinom_WR = readRDS('../Optimize/INGARCH_NBinom_WR/test_mses.RData')$mse,
                            GLARMA_IR = readRDS('../Optimize/GLARMA_Pois_IR/test_mses.RData')$mse,
                            GLARMA_WR = readRDS('../Optimize/GLARMA_Pois_WR/test_mses.RData')$mse)
-test_mse_all
+test_mse_all$average <- rowMeans(test_mse_all[, -1])
 
 test_mse_all %>%
   pivot_longer(names(test_mse_all)[-1], names_to = 'model', values_to = 'MSE') %>%
@@ -114,18 +116,20 @@ test_mse_all %>%
   theme(panel.grid = element_blank()) +
   coord_cartesian(ylim = c(-1, 15)) +
   annotate(geom = 'text', x = 1:10, y = 0, label = rep(c('IR', 'WR'), 5), size = 2) +
-  annotate(geom = 'text', x = c(1.5, 3.5, 5.5, 7.5, 9.5), y = -.4, 
-           label = c(rep(c('Pois', 'NBinom'), 2), 'Pois'), size = 3) +
+  annotate(geom = 'text', x = c(1.5, 3.5, 5.5, 7.5, 9.5, 11), y = -.4, 
+           label = c(rep(c('Pois', 'NBinom'), 2), 'Pois', 'Avg'), size = 3) +
   annotate(geom = 'text', x = c(2.5, 6.5, 9.5), y = -1, label = c('GLAR', 'INGARCH', 'GLARMA'), size = 3.5) +
   geom_segment(aes(x = 1.5, xend = 1.5, y = .5, yend = -.05), size = .2) +
   geom_segment(aes(x = 3.5, xend = 3.5, y = .5, yend = -.05), size = .2) +
   geom_segment(aes(x = 5.5, xend = 5.5, y = .5, yend = -.05), size = .2) +
   geom_segment(aes(x = 7.5, xend = 7.5, y = .5, yend = -.05), size = .2) +
   geom_segment(aes(x = 9.5, xend = 9.5, y = .5, yend = -.05), size = .2) +
+  geom_segment(aes(x = 11, xend = 11, y = .5, yend = -.05), size = .2) +
   geom_segment(aes(x = 2.5, xend = 2.5, y = .5, yend = -.5), size = .2) +
   geom_segment(aes(x = 6.5, xend = 6.5, y = .5, yend = -.5), size = .2) +
   geom_segment(aes(x = 4.5, xend = 4.5, y = .5, yend = -1.5), size = .2) +
   geom_segment(aes(x = 8.5, xend = 8.5, y = .5, yend = -1.5), size = .2) +
+  geom_segment(aes(x = 10.5, xend = 10.5, y = .5, yend = -1.5), size = .2) +
   labs(title = 'Collected Test MSE Values', x = 'Model', y = 'Response Variable')
 ```
 
@@ -143,7 +147,7 @@ readRDS('../Optimize/GLAR_Pois_IR/coefs.RData') %>%
                                         'Trial')),
                 factor(resp, levels = resp_names), 
                 fill = as.numeric(est))) +
-  scale_fill_continuous() +
+  scale_fill_continuous(limits = c(-.25, 1), breaks = seq(0, .75, by = .25)) +
   scale_x_discrete(limits = c('Beta 1', 'Beta 2', 'Beta 3', 'Beta 4', 'Beta 5', pred_names, 'Trial')) +
   theme_bw() +
   theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +
@@ -166,7 +170,7 @@ readRDS('../Optimize/GLAR_Pois_WR/coefs.RData') %>%
                                         'Trial')),
                 factor(resp, levels = resp_names), 
                 fill = as.numeric(est))) +
-  scale_fill_continuous() +
+  scale_fill_continuous(limits = c(-.25, 1), breaks = seq(0, .75, by = .25)) +
   scale_x_discrete(limits = c('Beta 1', 'Beta 2', 'Beta 3', 'Beta 4', 'Beta 5', resp_names, 'Trial')) +
   theme_bw() +
   theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +
@@ -188,7 +192,7 @@ readRDS('../Optimize/GLAR_NBinom_IR/coefs.RData') %>%
                                         'Trial')),
                 factor(resp, levels = resp_names), 
                 fill = as.numeric(est))) +
-  scale_fill_continuous() +
+  scale_fill_continuous(limits = c(-.25, 1), breaks = seq(0, .75, by = .25)) +
   scale_x_discrete(limits = c('Beta 1', 'Beta 2', 'Beta 3', 'Beta 4', 'Beta 5', pred_names, 'Trial')) +
   theme_bw() +
   theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +
@@ -211,7 +215,7 @@ readRDS('../Optimize/GLAR_NBinom_WR/coefs.RData') %>%
                                         'Trial')),
                 factor(resp, levels = resp_names), 
                 fill = as.numeric(est))) +
-  scale_fill_continuous() +
+  scale_fill_continuous(limits = c(-.25, 1), breaks = seq(0, .75, by = .25)) +
   scale_x_discrete(limits = c('Beta 1', 'Beta 2', 'Beta 3', 'Beta 4', 'Beta 5', resp_names, 'Trial')) +
   theme_bw() +
   theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +
@@ -233,7 +237,7 @@ readRDS('../Optimize/INGARCH_Pois_IR/coefs.RData') %>%
                                         'Trial')),
                 factor(resp, levels = resp_names), 
                 fill = as.numeric(est))) +
-  scale_fill_continuous() +
+  scale_fill_continuous(limits = c(-.25, 1), breaks = seq(0, .75, by = .25)) +
   scale_x_discrete(limits = c('Beta 1', 'Beta 2', 'Beta 3', 'Beta 4', 'Beta 5', 'Alpha', pred_names, 'Trial')) +
   theme_bw() +
   theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +
@@ -255,7 +259,7 @@ readRDS('../Optimize/INGARCH_Pois_WR/coefs.RData') %>%
                                         'Trial')),
                 factor(resp, levels = resp_names), 
                 fill = as.numeric(est))) +
-  scale_fill_continuous() +
+  scale_fill_continuous(limits = c(-.25, 1), breaks = seq(0, .75, by = .25)) +
   scale_x_discrete(limits = c('Beta 1', 'Beta 2', 'Beta 3', 'Beta 4', 'Beta 5', 'Alpha', resp_names, 'Trial')) +
   theme_bw() +
   theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +
@@ -277,7 +281,7 @@ readRDS('../Optimize/INGARCH_NBinom_IR/coefs.RData') %>%
                                         'Trial')),
                 factor(resp, levels = resp_names), 
                 fill = as.numeric(est))) +
-  scale_fill_continuous() +
+  scale_fill_continuous(limits = c(-.25, 1), breaks = seq(0, .75, by = .25)) +
   scale_x_discrete(limits = c('Beta 1', 'Beta 2', 'Beta 3', 'Beta 4', 'Beta 5', 'Alpha', pred_names, 'Trial')) +
   theme_bw() +
   theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +
@@ -299,7 +303,7 @@ readRDS('../Optimize/INGARCH_NBinom_WR/coefs.RData') %>%
                                         'Trial')),
                 factor(resp, levels = resp_names), 
                 fill = as.numeric(est))) +
-  scale_fill_continuous() +
+  scale_fill_continuous(limits = c(-.25, 1), breaks = seq(0, .75, by = .25)) +
   scale_x_discrete(limits = c('Beta 1', 'Beta 2', 'Beta 3', 'Beta 4', 'Beta 5', 'Alpha', resp_names, 'Trial')) +
   theme_bw() +
   theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +
@@ -321,7 +325,7 @@ readRDS('../Optimize/GLARMA_Pois_IR/coefs.RData') %>%
                                         'Trial')),
                 factor(resp, levels = resp_names), 
                 fill = as.numeric(est))) +
-  scale_fill_continuous() +
+  scale_fill_continuous(limits = c(-.25, 1), breaks = seq(0, .75, by = .25)) +
   scale_x_discrete(limits = c('Phi 1', 'Phi 2', 'Phi 3', 'Phi 4', 'Phi 5', 'Theta', pred_names, 'Trial')) +
   theme_bw() +
   theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +
@@ -343,10 +347,32 @@ readRDS('../Optimize/GLARMA_Pois_WR/coefs.RData') %>%
                                         'Trial')),
                 factor(resp, levels = resp_names), 
                 fill = as.numeric(est))) +
-  scale_fill_continuous() +
+  scale_fill_continuous(limits = c(-.25, 1), breaks = seq(0, .75, by = .25)) +
   scale_x_discrete(limits = c('Phi 1', 'Phi 2', 'Phi 3', 'Phi 4', 'Phi 5', 'Theta', resp_names, 'Trial')) +
   theme_bw() +
   theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +
   labs(title='Within-Region Poisson GLARMA Coefficient Estimates', 
        x='Predictor', y='Response', fill='')
+```
+
+```{r}
+all_preds <- c()
+
+mods <- c('GLAR_Pois_IR', 'GLAR_Pois_WR', 'GLAR_NBinom_IR', 'GLAR_NBinom_WR',
+          'INGARCH_Pois_IR', 'INGARCH_Pois_WR', 'INGARCH_NBinom_IR', 'INGARCH_NBinom_WR',
+          'GLARMA_Pois_IR', 'GLARMA_Pois_WR')
+
+for (mod in mods) {
+  predictors <- readRDS(paste('../Optimize/', mod, '/predictors.RData', sep = ''))
+  
+  for (resp in resp_names) {
+    all_preds <- c(all_preds, as.character(predictors[[resp]]))
+  }
+}
+
+ca1_preds <- all_preds[which(grepl('CA1', all_preds))]
+ca3_preds <- all_preds[which(grepl('CA3', all_preds))]
+
+table(ca1_preds)
+table(ca3_preds)
 ```
