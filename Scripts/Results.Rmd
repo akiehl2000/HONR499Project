@@ -8,6 +8,7 @@ output: pdf_document
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
 library(tidyverse)
+library(gt)
 ```
 
 Read in binned data:
@@ -131,6 +132,59 @@ test_mse_all %>%
   geom_segment(aes(x = 8.5, xend = 8.5, y = .5, yend = -1.5), size = .2) +
   geom_segment(aes(x = 10.5, xend = 10.5, y = .5, yend = -1.5), size = .2) +
   labs(title = 'Collected Test MSE Values', x = 'Model', y = 'Response Variable')
+```
+
+Collect test NMSE results:
+```{r}
+test_nmse_all <- data.frame(response = resp_names, 
+                           GLAR_Pois_IR = readRDS('../Optimize/GLAR_Pois_IR/test_mses.RData')$nmse,
+                           GLAR_Pois_WR = readRDS('../Optimize/GLAR_Pois_WR/test_mses.RData')$nmse,
+                           GLAR_NBinom_IR = readRDS('../Optimize/GLAR_NBinom_IR/test_mses.RData')$nmse,
+                           GLAR_NBinom_WR = readRDS('../Optimize/GLAR_NBinom_WR/test_mses.RData')$nmse,
+                           INGARCH_Pois_IR = readRDS('../Optimize/INGARCH_Pois_IR/test_mses.RData')$nmse,
+                           INGARCH_Pois_WR = readRDS('../Optimize/INGARCH_Pois_WR/test_mses.RData')$nmse,
+                           INGARCH_NBinom_IR = readRDS('../Optimize/INGARCH_NBinom_IR/test_mses.RData')$nmse,
+                           INGARCH_NBinom_WR = readRDS('../Optimize/INGARCH_NBinom_WR/test_mses.RData')$nmse,
+                           GLARMA_IR = readRDS('../Optimize/GLARMA_Pois_IR/test_mses.RData')$nmse,
+                           GLARMA_WR = readRDS('../Optimize/GLARMA_Pois_WR/test_mses.RData')$nmse)
+test_nmse_all$average <- rowMeans(test_nmse_all[, -1])
+
+test_nmse_all %>%
+  pivot_longer(names(test_mse_all)[-1], names_to = 'model', values_to = 'NMSE') %>%
+  ggplot() +
+  geom_tile(aes(factor(model, levels = names(test_mse_all)[-1]), 
+                factor(response, levels = resp_names), fill = NMSE)) +
+  theme_bw() +
+  theme(axis.text.x = element_blank(), axis.ticks.x = element_blank()) +
+  theme(panel.grid = element_blank()) +
+  coord_cartesian(ylim = c(-1, 15)) +
+  annotate(geom = 'text', x = 1:10, y = 0, label = rep(c('IR', 'WR'), 5), size = 2) +
+  annotate(geom = 'text', x = c(1.5, 3.5, 5.5, 7.5, 9.5, 11), y = -.4, 
+           label = c(rep(c('Pois', 'NBinom'), 2), 'Pois', 'Avg'), size = 3) +
+  annotate(geom = 'text', x = c(2.5, 6.5, 9.5), y = -1, label = c('GLAR', 'INGARCH', 'GLARMA'), size = 3.5) +
+  geom_segment(aes(x = 1.5, xend = 1.5, y = .5, yend = -.05), size = .2) +
+  geom_segment(aes(x = 3.5, xend = 3.5, y = .5, yend = -.05), size = .2) +
+  geom_segment(aes(x = 5.5, xend = 5.5, y = .5, yend = -.05), size = .2) +
+  geom_segment(aes(x = 7.5, xend = 7.5, y = .5, yend = -.05), size = .2) +
+  geom_segment(aes(x = 9.5, xend = 9.5, y = .5, yend = -.05), size = .2) +
+  geom_segment(aes(x = 11, xend = 11, y = .5, yend = -.05), size = .2) +
+  geom_segment(aes(x = 2.5, xend = 2.5, y = .5, yend = -.5), size = .2) +
+  geom_segment(aes(x = 6.5, xend = 6.5, y = .5, yend = -.5), size = .2) +
+  geom_segment(aes(x = 4.5, xend = 4.5, y = .5, yend = -1.5), size = .2) +
+  geom_segment(aes(x = 8.5, xend = 8.5, y = .5, yend = -1.5), size = .2) +
+  geom_segment(aes(x = 10.5, xend = 10.5, y = .5, yend = -1.5), size = .2) +
+  labs(title = 'Collected Test NMSE Values', x = 'Model', y = 'Response Variable')
+```
+
+Test MSEs and NMSEs table:
+```{r}
+test_all <- data.frame(response = resp_names, 
+                       MSE = round(test_mse_all$average, 3),
+                       NMSE = round(test_nmse_all$average, 3)) %>%
+  gt(rowname_col = 'response')
+test_all %>%
+  saveRDS('~/Desktop/table.rds')
+test_all
 ```
 
 Inter-region GLAR poisson coefficients:
