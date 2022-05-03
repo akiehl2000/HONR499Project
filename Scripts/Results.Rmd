@@ -182,8 +182,6 @@ test_all <- data.frame(response = resp_names,
                        MSE = round(test_mse_all$average, 3),
                        NMSE = round(test_nmse_all$average, 3)) %>%
   gt(rowname_col = 'response')
-test_all %>%
-  saveRDS('~/Desktop/table.rds')
 test_all
 ```
 
