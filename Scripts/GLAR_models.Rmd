@@ -343,7 +343,8 @@ fitOpt <- function(predictors, tuned, dist, type) {
   # type: 'ir' or 'wr' for inter-region or within-region fitting
   
   test_mses <- data.frame(resp = resp_names,
-                          mse = rep(NA, length(resp_names)))
+                          mse = rep(NA, length(resp_names)),
+                          nmse = rep(NA, length(resp_names)))
   
   for (resp in resp_names) {
     # collect data frames
@@ -396,8 +397,10 @@ fitOpt <- function(predictors, tuned, dist, type) {
       {
         pred <- predict(model, n.ahead = nrow(valid_df), newxreg = valid_df)
         mse <- mean((pred[['pred']] - valid_pred[, resp])^2, na.rm = TRUE)
+        nmse <- NMSE(valid_pred[, resp], pred[['pred']], as.matrix(train_df[, -1]))
         
         test_mses$mse[which(test_mses$resp == resp)] <- mse
+        test_mses$nmse[which(test_mses$resp == resp)] <- nmse
       }, 
       error = function(err) {
         print(paste('Model evaluation error on optimal ', resp, ': ', err, 
