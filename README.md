@@ -1,6 +1,6 @@
-# HONR499 Thesis Project
+# HONR 499 Thesis Project
 
-This repository contains all the work associated with my senior thesis project for the CSU Honors Program and my capstone project for DSCI 478. It is entitled 'Inference on Hippocampal Connectivity Using Multi-Trial Count-Valued Time Series.' The repository is organized as follows:  
+This repository contains all the work associated with my senior thesis project for the Colorado State University Honors Program and my final project for DSCI 478 (data science capstone). It is entitled 'Inference on Hippocampal Connectivity Using Multi-Trial Count-Valued Time Series.' The repository is organized as follows:  
 - `Batch`: Contains the batch request scripts used on the Summit HPC servers to execute model fitting scripts.  
 - `Data`: Contains raw data and binned version of data.  
 - `Models`: Contains all fitted models saved as .rds files.  
